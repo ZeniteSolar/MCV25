@@ -1,0 +1,54 @@
+# Backup files
+/backupfiles/
+
+# Build directories
+/build/
+/build-*/
+build.log
+build.sh
+/build-rpi/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Compiled object files, binaries, libraries
+*.o
+*.so
+*.a
+*.exe
+*.out
+app
+
+# Edge Impulse model files
+tflite-model/*.tflite
+tflite-model/*.onnx
+tflite-model/*.pb
+
+# Vosk models (if large, not tracked)
+#vosk-models/
+
+# Logs
+*.log
+
+# Editor/IDE files
+.vscode/
+*.swp
+*~
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Python cache (if any scripts)
+__pycache__/
+*.pyc
+
+# Cross Compilation files
+/rpi-sysroot/lib/
+/rpi-sysroot/usr/
+
+# Vscode workspace settings
+.vscode/settings.json
