@@ -23,10 +23,14 @@
 #include "edge-impulse-sdk/classifier/ei_run_classifier.h"
 #include "edge-impulse-sdk/classifier/ei_classifier_types.h"
 
-#define SAMPLE_RATE     16000
-#define SAMPLE_LENGTH   EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE
-#define CHANNELS        1
-#define PCM_DEVICE      "default"
+#define SAMPLE_LENGTH   EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE  // Tamanho do frame de áudio (frame * samples per frame)
+#define SAMPLE_RATE     16000                               // Taxa de amostragem do microfone
+#define CHANNELS        1                                   // Mono
+#define PCM_DEVICE      "default"                           // Dispositivo de áudio ALSA padrão
+#define MAX_ATTEMPTS    10                                  // Tentativa para conectar ao microfone
+#define DELAY           5000                                // ms de delay entre tentativas
+
+#define ENABLE_CAN      0                                   // Habilita ou desabilita o uso de CAN
 
 static std::vector<float> audio_frame;
 
@@ -42,40 +46,68 @@ snd_pcm_t* init_audio() {
 
     std::cout << "[INFO] Inicializando captura de áudio ALSA em \"" << PCM_DEVICE << "\"..." << std::endl;
 
-    if ((err = snd_pcm_open(&pcm_handle, PCM_DEVICE, SND_PCM_STREAM_CAPTURE, 0)) < 0) {
-        std::cerr << "[ERRO] Não foi possível abrir o dispositivo PCM: " << snd_strerror(err) << std::endl;
-        return nullptr;
+    for (int attempt = 1; attempt <= MAX_ATTEMPTS; ++attempt) {
+        err = snd_pcm_open(&pcm_handle, PCM_DEVICE, SND_PCM_STREAM_CAPTURE, 0);
+        if (err >= 0) {
+            std::cout << "[INFO] Microfone aberto na tentativa " << attempt << " de " << MAX_ATTEMPTS << "." << std::endl;
+            
+            if ((err = snd_pcm_hw_params_malloc(&params)) < 0) {
+                std::cerr << "[ERRO] Falha ao alocar hw_params: " << snd_strerror(err) << std::endl;
+                snd_pcm_close(pcm_handle);
+                return nullptr;
+            }
+
+            if ((err = snd_pcm_hw_params_any(pcm_handle, params)) < 0 ||
+                (err = snd_pcm_hw_params_set_access(pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0 ||
+                (err = snd_pcm_hw_params_set_format(pcm_handle, params, SND_PCM_FORMAT_S16_LE)) < 0 ||
+                (err = snd_pcm_hw_params_set_channels(pcm_handle, params, CHANNELS)) < 0 ||
+                (err = snd_pcm_hw_params_set_rate(pcm_handle, params, SAMPLE_RATE, 0)) < 0 ||
+                (err = snd_pcm_hw_params(pcm_handle, params)) < 0) {
+
+                std::cerr << "[ERRO] Falha ao configurar hw_params: " << snd_strerror(err) << std::endl;
+                snd_pcm_hw_params_free(params);
+                snd_pcm_close(pcm_handle);
+                return nullptr;
+            }
+
+            snd_pcm_hw_params_free(params);
+
+            if ((err = snd_pcm_prepare(pcm_handle)) < 0) {
+                std::cerr << "[ERRO] Falha ao preparar PCM: " << snd_strerror(err) << std::endl;
+                snd_pcm_close(pcm_handle);
+                return nullptr;
+            }
+
+            std::cout << "[INFO] Áudio configurado para " << SAMPLE_RATE << " Hz, " << CHANNELS << " canal(is), formato S16_LE." << std::endl;
+            return pcm_handle;
+        }
+
+        std::cerr << "[WARN] Tentativa " << attempt << " falhou: " << snd_strerror(err) << std::endl;
+
+        if (attempt < MAX_ATTEMPTS) {
+            std::cerr << "[INFO] Aguardando " << DELAY << "ms antes de tentar novamente...\n";
+            usleep(DELAY * 1000);
+        }
     }
 
-    if ((err = snd_pcm_hw_params_malloc(&params)) < 0) {
-        std::cerr << "[ERRO] Falha ao alocar hw_params: " << snd_strerror(err) << std::endl;
-        snd_pcm_close(pcm_handle);
-        return nullptr;
+    std::cerr << "[ERRO] Não foi possível inicializar o microfone após " << MAX_ATTEMPTS << " tentativas.\n";
+    return nullptr;
+}
+
+/*
+*  Verifica se o sinal de áudio é constante (sem variação).
+*  Evita leitura de áudios inválidos (ex: microfone desconectado ou travado).
+*
+*  @param buffer Buffer contendo os samples de áudio.
+*  @param size Tamanho do buffer.
+*  @return true se o sinal for constante (todos os valores iguais), false se houver variação.
+*/
+bool isConstantSignal(const int16_t* buffer, size_t size) {
+    int16_t first = buffer[0];
+    for (size_t i = 1; i < size; ++i) {
+        if (buffer[i] != first) return false;
     }
-
-    if ((err = snd_pcm_hw_params_any(pcm_handle, params)) < 0 ||
-        (err = snd_pcm_hw_params_set_access(pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0 ||
-        (err = snd_pcm_hw_params_set_format(pcm_handle, params, SND_PCM_FORMAT_S16_LE)) < 0 ||
-        (err = snd_pcm_hw_params_set_channels(pcm_handle, params, CHANNELS)) < 0 ||
-        (err = snd_pcm_hw_params_set_rate(pcm_handle, params, SAMPLE_RATE, 0)) < 0 ||
-        (err = snd_pcm_hw_params(pcm_handle, params)) < 0) {
-
-        std::cerr << "[ERRO] Falha ao configurar hw_params: " << snd_strerror(err) << std::endl;
-        snd_pcm_hw_params_free(params);
-        snd_pcm_close(pcm_handle);
-        return nullptr;
-    }
-
-    snd_pcm_hw_params_free(params);
-
-    if ((err = snd_pcm_prepare(pcm_handle)) < 0) {
-        std::cerr << "[ERRO] Falha ao preparar PCM: " << snd_strerror(err) << std::endl;
-        snd_pcm_close(pcm_handle);
-        return nullptr;
-    }
-
-    std::cout << "[INFO] Áudio configurado para " << SAMPLE_RATE << " Hz, " << CHANNELS << " canal(is), formato S16_LE." << std::endl;
-    return pcm_handle;
+    return true;
 }
 
 /*
@@ -162,16 +194,16 @@ bool wake_word_detected(std::vector<float>& audio_samples, signal_t* signal, snd
 VoskRecognizer* criarCommandRecognizer(VoskModel* model) {
     const char* grammar = R"([
         "desligar motor", "ligar motor",
-        "mudar velocidade para 10",  "mudar velocidade para dez",
-        "mudar velocidade para 20",  "mudar velocidade para vinte",
-        "mudar velocidade para 30",  "mudar velocidade para trinta",
-        "mudar velocidade para 40",  "mudar velocidade para quarenta",
-        "mudar velocidade para 50",  "mudar velocidade para cinquenta",
-        "mudar velocidade para 60",  "mudar velocidade para sessenta",
-        "mudar velocidade para 70",  "mudar velocidade para setenta",
-        "mudar velocidade para 80",  "mudar velocidade para oitenta",
-        "mudar velocidade para 90",  "mudar velocidade para noventa",
-        "mudar velocidade para 100", "mudar velocidade para cem",
+        "mudar velocidade para dez",
+        "mudar velocidade para vinte",
+        "mudar velocidade para trinta",
+        "mudar velocidade para quarenta",
+        "mudar velocidade para cinquenta",
+        "mudar velocidade para sessenta",
+        "mudar velocidade para setenta",
+        "mudar velocidade para oitenta",
+        "mudar velocidade para noventa",
+        "mudar velocidade para cem",
         "virar a direita",
         "virar a esquerda",
         "seguir reto"
@@ -187,6 +219,7 @@ VoskRecognizer* criarCommandRecognizer(VoskModel* model) {
 *   @param can_sock Socket CAN já configurado.
 */
 void send_command_motor(int can_sock, uint8_t duty_cycle) {
+#if ENABLE_CAN
     uint8_t dados[CAN_MSG_MCV25_MOTOR_LENGTH];
 
     // Preenchimento da estrutura da mensagem:
@@ -202,7 +235,12 @@ void send_command_motor(int can_sock, uint8_t duty_cycle) {
 
     if (send_can(can_sock, CAN_MSG_MCV25_MOTOR_ID, dados, CAN_MSG_MCV25_MOTOR_LENGTH)) {
         std::cout << "[Info] Velocidade ajustada para " << static_cast<int>(duty_cycle) << "%\n";
+    } else {
+        std::cerr << "[ERRO] Falha ao enviar comando de motor\n";
     }
+#else
+    std::cout << "[INFO] CAN desativado. Comando de motor não enviado.\n";
+#endif
 }
 
 /*
@@ -212,6 +250,7 @@ void send_command_motor(int can_sock, uint8_t duty_cycle) {
 *   @param can_sock Socket CAN já configurado.
 */
 void send_command_tail(int can_sock, int16_t posicao_graus_cem) {
+#if ENABLE_CAN
     uint8_t dados[CAN_MSG_MCV25_MDE_LENGTH];
 
     // Garantia de limites físicos (±45.00 graus)
@@ -231,8 +270,10 @@ void send_command_tail(int can_sock, int16_t posicao_graus_cem) {
     } else {
         std::cerr << "[ERRO] Falha ao enviar comando de rabeta\n";
     }
+#else
+    std::cout << "[INFO] CAN desativado. Comando de rabeta não enviado.\n";
+#endif
 }
-
 
 int main() {
     setlogmask(LOG_UPTO(LOG_ERR));
@@ -251,19 +292,35 @@ int main() {
     std::vector<float> float_samples(SAMPLE_LENGTH);
     short raw_samples[SAMPLE_LENGTH];
 
+#if ENABLE_CAN
     int can_sock = setup_can();
     if (can_sock < 0) {
         std::cerr << "[ERRO] Falha ao configurar interface CAN.\n";
         return 1;
     }
+#else
+    int can_sock = -1;
+    std::cout << "[INFO] CAN desativado para testes locais.\n";
+#endif
 
     std::cout << "[INFO] Aguardando palavra de ativação: \"zenira\"...\n";
 
     while (true) {
-        snd_pcm_readi(audio, raw_samples, SAMPLE_LENGTH);
+        int err = snd_pcm_readi(audio, raw_samples, SAMPLE_LENGTH);
+        if (err != SAMPLE_LENGTH) {
+            std::cerr << "[ERRO] Falha ao ler dados de áudio: " << snd_strerror(err) << std::endl;
+            continue;
+        }
+
+        if (isConstantSignal(raw_samples, SAMPLE_LENGTH)) {
+            std::cerr << "[INFO] Sinal de áudio constante detectado. Ignorando frame.\n";
+            continue;
+        }
+
         for (int i = 0; i < SAMPLE_LENGTH; i++) {
             float_samples[i] = raw_samples[i] / 32768.0f;
         }
+
 
         if (wake_word_detected(float_samples, &signal, audio)) {
             std::cout << "[INFO] Iniciando reconhecimento de comandos com Vosk...\n";
@@ -364,6 +421,10 @@ int main() {
 
     vosk_model_free(model);
     snd_pcm_close(audio);
+
+#if ENABLE_CAN
     close_can(can_sock);
+#endif
+
     return 0;
 }
