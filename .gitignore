@@ -22,11 +22,6 @@ Makefile
 *.out
 app
 
-# Edge Impulse model files
-tflite-model/*.tflite
-tflite-model/*.onnx
-tflite-model/*.pb
-
 # Vosk models (if large, not tracked)
 #vosk-models/
 
@@ -46,7 +41,7 @@ Thumbs.db
 __pycache__/
 *.pyc
 
-# Cross Compilation files
+# Cross Compilation files (too large)
 /rpi-sysroot/lib/
 /rpi-sysroot/usr/
 

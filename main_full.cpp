@@ -29,7 +29,7 @@
 #define PCM_DEVICE      "default"                           // Dispositivo de áudio ALSA padrão
 #define MAX_ATTEMPTS    10                                  // Tentativa para conectar ao microfone
 #define DELAY           5000                                // ms de delay entre tentativas
-
+#define VOSK_LOG_LEVEL  1                                   // Nível de log do Vosk (0: desativado, 1: erros, 2: avisos)
 #define ENABLE_CAN      0                                   // Habilita ou desabilita o uso de CAN
 
 static std::vector<float> audio_frame;
@@ -102,7 +102,7 @@ snd_pcm_t* init_audio() {
 *  @param size Tamanho do buffer.
 *  @return true se o sinal for constante (todos os valores iguais), false se houver variação.
 */
-bool isConstantSignal(const int16_t* buffer, size_t size) {
+bool check_constant_signal(const int16_t* buffer, size_t size) {
     int16_t first = buffer[0];
     for (size_t i = 1; i < size; ++i) {
         if (buffer[i] != first) return false;
@@ -191,22 +191,21 @@ bool wake_word_detected(std::vector<float>& audio_samples, signal_t* signal, snd
 *   @param model Ponteiro para o modelo Vosk carregado.
 *   @return Ponteiro para o reconhecedor de comandos ou nullptr em caso de erro.
 */
-VoskRecognizer* criarCommandRecognizer(VoskModel* model) {
+VoskRecognizer* create_command_recognizer(VoskModel* model) {
     const char* grammar = R"([
-        "desligar motor", "ligar motor",
-        "mudar velocidade para dez",
-        "mudar velocidade para vinte",
-        "mudar velocidade para trinta",
-        "mudar velocidade para quarenta",
-        "mudar velocidade para cinquenta",
-        "mudar velocidade para sessenta",
-        "mudar velocidade para setenta",
-        "mudar velocidade para oitenta",
-        "mudar velocidade para noventa",
-        "mudar velocidade para cem",
-        "virar a direita",
-        "virar a esquerda",
-        "seguir reto"
+        "mudar velocidade para dez",       "velocidade para dez",       "velocidade dez",
+        "mudar velocidade para vinte",     "velocidade para vinte",     "velocidade vinte",
+        "mudar velocidade para trinta",    "velocidade para trinta",    "velocidade trinta",
+        "mudar velocidade para quarenta",  "velocidade para quarenta",  "velocidade quarenta",
+        "mudar velocidade para cinquenta", "velocidade para cinquenta", "velocidade cinquenta",
+        "mudar velocidade para sessenta",  "velocidade para sessenta",  "velocidade sessenta",
+        "mudar velocidade para setenta",   "velocidade para setenta",   "velocidade setenta",
+        "mudar velocidade para oitenta",   "velocidade para oitenta",   "velocidade oitenta",
+        "mudar velocidade para noventa",   "velocidade para noventa",   "velocidade noventa",
+        "mudar velocidade para cem",       "velocidade para cem",       "velocidade cem",
+        "desligar motor", "motor off",
+        "ligar motor", "motor on",
+        "virar a direita", "virar a esquerda", "seguir reto"
     ])";
 
     return vosk_recognizer_new_grm(model, SAMPLE_RATE, grammar);
@@ -279,6 +278,7 @@ int main() {
     setlogmask(LOG_UPTO(LOG_ERR));
     std::cout << "[INFO] Carregando modelo Vosk...\n";
 
+    vosk_set_log_level(VOSK_LOG_LEVEL);
     VoskModel* model = vosk_model_new("vosk-models/vosk-model-small-pt-0.3");
     if (!model) {
         std::cerr << "[ERRO] Falha ao carregar modelo Vosk.\n";
@@ -312,7 +312,7 @@ int main() {
             continue;
         }
 
-        if (isConstantSignal(raw_samples, SAMPLE_LENGTH)) {
+        if (check_constant_signal(raw_samples, SAMPLE_LENGTH)) {
             std::cerr << "[INFO] Sinal de áudio constante detectado. Ignorando frame.\n";
             continue;
         }
@@ -324,7 +324,7 @@ int main() {
 
         if (wake_word_detected(float_samples, &signal, audio)) {
             std::cout << "[INFO] Iniciando reconhecimento de comandos com Vosk...\n";
-            VoskRecognizer* recognizer = criarCommandRecognizer(model);
+            VoskRecognizer* recognizer = create_command_recognizer(model);
 
             bool comandoReconhecido = false;
             time_t inicio = time(nullptr);
@@ -348,43 +348,63 @@ int main() {
                             std::cout << "[INFO] Ligando motor.\n";
                             send_command_motor(can_sock, 5); 
                         }
-                        else if (comando == "mudar velocidade para 10" || comando == "mudar velocidade para dez") {
+                        else if (comando == "mudar velocidade para dez" || 
+                                 comando == "velocidade para dez" || 
+                                 comando == "velocidade dez") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 10%.\n";
                             send_command_motor(can_sock, 10);
                         }
-                        else if (comando == "mudar velocidade para 20" || comando == "mudar velocidade para vinte") {
+                        else if (comando == "mudar velocidade para vinte" || 
+                                 comando == "velocidade para vinte" || 
+                                 comando == "velocidade vinte") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 20%.\n";
                             send_command_motor(can_sock, 20);
                         }
-                        else if (comando == "mudar velocidade para 30" || comando == "mudar velocidade para trinta") {
+                        else if (comando == "mudar velocidade para trinta" || 
+                                 comando == "velocidade para trinta" || 
+                                 comando == "velocidade trinta") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 30%.\n";
                             send_command_motor(can_sock, 30);
                         }
-                        else if (comando == "mudar velocidade para 40" || comando == "mudar velocidade para quarenta") {
+                        else if (comando == "mudar velocidade para quarenta" || 
+                                 comando == "velocidade para quarenta" || 
+                                 comando == "velocidade quarenta") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 40%.\n";
                             send_command_motor(can_sock, 40);
                         }
-                        else if (comando == "mudar velocidade para 50" || comando == "mudar velocidade para cinquenta") {
+                        else if (comando == "mudar velocidade para cinquenta" || 
+                                 comando == "velocidade para cinquenta" || 
+                                 comando == "velocidade cinquenta") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 50%.\n";
                             send_command_motor(can_sock, 50);
                         }
-                        else if (comando == "mudar velocidade para 60" || comando == "mudar velocidade para sessenta") {
+                        else if (comando == "mudar velocidade para sessenta" || 
+                                 comando == "velocidade para sessenta" || 
+                                 comando == "velocidade sessenta") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 60%.\n";
                             send_command_motor(can_sock, 60);
                         }
-                        else if (comando == "mudar velocidade para 70" || comando == "mudar velocidade para setenta") {
+                        else if (comando == "mudar velocidade para setenta" || 
+                                 comando == "velocidade para setenta" || 
+                                 comando == "velocidade setenta") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 70%.\n";
                             send_command_motor(can_sock, 70);
                         }
-                        else if (comando == "mudar velocidade para 80" || comando == "mudar velocidade para oitenta") {
+                        else if (comando == "mudar velocidade para oitenta" || 
+                                 comando == "velocidade para oitenta" || 
+                                 comando == "velocidade oitenta") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 80%.\n";
                             send_command_motor(can_sock, 80);
                         }
-                        else if (comando == "mudar velocidade para 90" || comando == "mudar velocidade para noventa") {
+                        else if (comando == "mudar velocidade para noventa" || 
+                                 comando == "velocidade para noventa" || 
+                                 comando == "velocidade noventa") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 90%.\n";
                             send_command_motor(can_sock, 90);
                         }
-                        else if (comando == "mudar velocidade para 100" || comando == "mudar velocidade para cem") {
+                        else if (comando == "mudar velocidade para cem" || 
+                                 comando == "velocidade para cem" || 
+                                 comando == "velocidade cem") {
                             std::cout << "[INFO] Ajustando velocidade do motor para 100%.\n";
                             send_command_motor(can_sock, 100);
                         }
