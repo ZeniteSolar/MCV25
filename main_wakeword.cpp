@@ -1,3 +1,12 @@
+/*
+* File:  main_wakeword.cpp
+* Autor: Victor Lompa Schwider
+*
+* Este arquivo contém a implementação do reconhecimento da wake-word "Zenira"
+* utilizando o Edge Impulse SDK e a biblioteca Vosk para reconhecimento de fala.
+* Este código foi desenvolvido para testes locais
+*/
+
 #include "edge-impulse-sdk/classifier/ei_run_classifier.h"
 #include <iostream>
 #include <unistd.h>

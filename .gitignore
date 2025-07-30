@@ -50,3 +50,9 @@ __pycache__/
 
 # Unused readme files
 README_CrossCompile.md
+README_Service.md
+
+# Test files
+audio.cpp
+audio.h
+main_wakeword.cpp
