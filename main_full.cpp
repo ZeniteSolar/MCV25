@@ -9,6 +9,13 @@
 */
 
 /* Includes */
+// Debug includes para salvar arquivos WAV
+#include "/usr/include/sndfile.h"
+#include <iomanip>
+#include <sstream>
+
+#include <cstdint>
+#include <cmath>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -36,19 +43,62 @@
 #include "edge-impulse-sdk/classifier/ei_classifier_types.h"
 
 /* Defines */
-#define SAMPLE_LENGTH   EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE  // Tamanho do frame de áudio (frame * samples per frame)
-#define SAMPLE_RATE     16000                               // Taxa de amostragem do microfone
-#define CHANNELS        1                                   // Mono
-#define PCM_DEVICE      "default"                           // Dispositivo de áudio ALSA padrão
-#define MAX_ATTEMPTS    10                                  // Tentativa para conectar ao microfone
-#define DELAY           5000                                // ms de delay entre tentativas
-#define VOSK_LOG_LEVEL  1                                   // Nível de log do Vosk (0: desativado, 1: erros, 2: avisos)
-#define ENABLE_CAN      1                                   // Habilita ou desabilita o uso de CAN
+
+// Alsa configs
+#define SAMPLE_LENGTH       EI_CLASSIFIER_DSP_INPUT_FRAME_SIZE  // Tamanho do frame de áudio (frame * samples per frame)
+#define PCM_DEVICE          "plughw:1,0"                        // Dispositivo de áudio ALSA padrão
+#define CHANNELS            1                                   // Canais de áudio (mono)
+#define ALSA_SAMPLE_RATE    44100                               // Taxa de amostragem do microfone (ALSA)
+#define TARGET_SAMPLE_RATE  16000                               // Taxa de amostragem alvo (Vosk e Edge Impulse)
+
+// Reconnect configs
+#define MAX_ATTEMPTS        10                                  // Tentativa para conectar ao microfone
+#define DELAY               5000                                // ms de delay entre tentativas
+
+// Debug configs
+#define VOSK_LOG_LEVEL      1                                   // Nível de log do Vosk (0: desativado, 1: erros, 2: avisos)
+#define ENABLE_CAN          0                                   // Habilita ou desabilita o uso de CAN
+#define SAVE_TEST_WAV_RAW   0                                   // Salva arquivos WAV para debug antes do processamento
+#define SAVE_TEST_WAV_DS    0                                   // Salva arquivos WAV para debug depois do downsample
 
 /* Variables */
-static std::vector<float> audio_frame;
+std::vector<float> float_samples(SAMPLE_LENGTH);
+std::vector<int16_t> converted_samples(SAMPLE_LENGTH);
+std::vector<int16_t> raw_samples(ALSA_SAMPLE_RATE);
 
-/*
+/* Debug Varibles */
+int wav_counter = 0;
+
+/**
+ * [ DEBUG ]
+ * Função de debug para escutar o áudio capturado antes ou depois do processamento.
+ *
+ * @param filename Nome do arquivo WAV a ser salvo.
+ * @param samples Amostras de áudio a serem salvas.
+ * @param sample_rate Taxa de amostragem das amostras de áudio.
+ */
+void save_wav(const std::string &filename, const std::vector<int16_t> &samples, int sample_rate) {
+    SF_INFO sfinfo;
+    sfinfo.samplerate = sample_rate;
+    sfinfo.channels = 1;           // Mono
+    sfinfo.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
+
+    SNDFILE* file = sf_open(filename.c_str(), SFM_WRITE, &sfinfo);
+    if (!file) {
+        std::cerr << "Erro ao criar arquivo WAV: " << sf_strerror(nullptr) << std::endl;
+        return;
+    }
+
+    sf_count_t written = sf_write_short(file, samples.data(), samples.size());
+    if (written != (sf_count_t)samples.size()) {
+        std::cerr << "Aviso: nem todos os samples foram escritos.\n";
+    }
+
+    sf_close(file);
+    std::cout << "[INFO] Arquivo WAV salvo: " << filename << std::endl;
+}
+
+/**
 *   Inicializa o dispositivo de áudio ALSA e configura os parâmetros necessários.
 *
 *   @return snd_pcm_t* Ponteiro para o dispositivo de áudio ALSA ou nullptr em caso de erro.
@@ -75,7 +125,7 @@ snd_pcm_t* init_audio() {
                 (err = snd_pcm_hw_params_set_access(pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0 ||
                 (err = snd_pcm_hw_params_set_format(pcm_handle, params, SND_PCM_FORMAT_S16_LE)) < 0 ||
                 (err = snd_pcm_hw_params_set_channels(pcm_handle, params, CHANNELS)) < 0 ||
-                (err = snd_pcm_hw_params_set_rate(pcm_handle, params, SAMPLE_RATE, 0)) < 0 ||
+                (err = snd_pcm_hw_params_set_rate(pcm_handle, params, ALSA_SAMPLE_RATE, 0)) < 0 ||
                 (err = snd_pcm_hw_params(pcm_handle, params)) < 0) {
 
                 std::cerr << "[ERRO] Falha ao configurar hw_params: " << snd_strerror(err) << std::endl;
@@ -92,7 +142,7 @@ snd_pcm_t* init_audio() {
                 return nullptr;
             }
 
-            std::cout << "[INFO] Áudio configurado para " << SAMPLE_RATE << " Hz, " << CHANNELS << " canal(is), formato S16_LE." << std::endl;
+            std::cout << "[INFO] Áudio configurado para " << ALSA_SAMPLE_RATE << " Hz, " << CHANNELS << " canal(is), formato S16_LE." << std::endl;
             return pcm_handle;
         }
 
@@ -108,23 +158,7 @@ snd_pcm_t* init_audio() {
     return nullptr;
 }
 
-/*
-*  Verifica se o sinal de áudio é constante (sem variação).
-*  Evita leitura de áudios inválidos (ex: microfone desconectado ou travado).
-*
-*  @param buffer Buffer contendo os samples de áudio.
-*  @param size Tamanho do buffer.
-*  @return true se o sinal for constante (todos os valores iguais), false se houver variação.
-*/
-bool check_constant_signal(const int16_t* buffer, size_t size) {
-    int16_t first = buffer[0];
-    for (size_t i = 1; i < size; ++i) {
-        if (buffer[i] != first) return false;
-    }
-    return true;
-}
-
-/*
+/**
 *   Callback para leitura de dados de áudio do microfone.
 *
 *   @param offset Posição inicial dos dados a serem lidos.
@@ -133,50 +167,105 @@ bool check_constant_signal(const int16_t* buffer, size_t size) {
 *   @return 0 em caso de sucesso, -1 se o offset ou length forem inválidos. 
 */
 int get_signal_audio_data(size_t offset, size_t length, float *out_ptr) {
-    if (offset + length > audio_frame.size()) return -1;
-    memcpy(out_ptr, audio_frame.data() + offset, length * sizeof(float));
+    if (!out_ptr) return -1;
+    if (offset + length > float_samples.size()) {
+        length = float_samples.size() - offset; // evita overflow
+    }
+    memcpy(out_ptr, float_samples.data() + offset, length * sizeof(float));
     return 0;
 }
 
-/*
-*   Captura um frame de áudio do microfone e preenche a estrutura signal_t.
+/**
+*  Verifica se o sinal de áudio é constante (sem variação).
+*  Evita leitura de áudios inválidos (ex: microfone desconectado ou travado).
 *
-*   @param signal Ponteiro para a estrutura signal_t a ser preenchida.
-*   @param pcm_handle Ponteiro para o dispositivo de áudio PCM.
-*   @return true se o frame foi capturado com sucesso, false em caso de erro.
+*  @param buffer Buffer contendo os samples de áudio.
+*  @param size Tamanho do buffer.
+*  @return true se o sinal for constante (todos os valores iguais), false se houver variação.
 */
-bool get_audio_frame_signal(signal_t *signal, snd_pcm_t *pcm_handle) {
-    short buffer[SAMPLE_LENGTH];
-    int err = snd_pcm_readi(pcm_handle, buffer, SAMPLE_LENGTH);
-    if (err != SAMPLE_LENGTH) {
-        std::cerr << "[ERRO] Falha na leitura do microfone: " << snd_strerror(err) << std::endl;
-        return false;
+bool check_constant_signal(const int16_t* buffer, size_t size) {
+    if (!buffer || size == 0) return true; // sinal vazio é considerado constante
+    int16_t first = buffer[0];
+    for (size_t i = 1; i < size; ++i) {
+        if (buffer[i] != first) return false;
     }
-
-    audio_frame.resize(SAMPLE_LENGTH);
-    for (size_t i = 0; i < SAMPLE_LENGTH; i++) {
-        audio_frame[i] = buffer[i] / 32768.0f;
+    return true;
+}
+bool check_constant_signal(const float* buffer, size_t size) {
+    if (!buffer || size == 0) return true;
+    float first = buffer[0];
+    for (size_t i = 1; i < size; ++i) {
+        if (buffer[i] != first) return false;
     }
-
-    signal->total_length = audio_frame.size();
-    signal->get_data = &get_signal_audio_data;
     return true;
 }
 
-/*
+/**
+ * Realiza o downsampling de um vetor de amostras de áudio.
+ *
+ * @param input Vetor de entrada com amostras de áudio em formato int16_t.
+ * @param output Vetor de saída para as amostras de áudio reduzidas em formato int16_t.
+ *
+ * A função reduz a taxa de amostragem do áudio de 44100 Hz para 16000 Hz
+ * utilizando interpolação linear para evitar aliasing.
+ */
+void downsample(const std::vector<int16_t>& input, std::vector<int16_t>& output) {
+    output.resize(SAMPLE_LENGTH); // tamanho fixo
+
+    size_t input_size = input.size();
+    for (size_t i = 0; i < SAMPLE_LENGTH; ++i) {
+        double src_index = i * (input_size - 1.0) / (SAMPLE_LENGTH - 1.0);
+        size_t index_floor = static_cast<size_t>(std::floor(src_index));
+        size_t index_ceil  = std::min(index_floor + 1, input_size - 1);
+        double frac = src_index - index_floor;
+
+        double sample = (1.0 - frac) * input[index_floor] + frac * input[index_ceil];
+        output[i] = static_cast<int16_t>(sample);
+    }
+}
+
+/**
+ * Normaliza os samples de áudio de int16_t para float.
+ *
+ * @param input Ponteiro para os samples de entrada (int16_t).
+ * @param length Quantidade de samples.
+ * @param output Vetor de saída já alocado para receber os valores normalizados.
+ *
+ * Normaliza os samples de áudio de int16_t para float (usando ponteiros).
+ *
+ * @param input Vetor de entrada com amostras de áudio em formato int16_t.
+ * @param output Vetor de saída para as amostras de áudio em formato float.
+ *  
+ * Normaliza os samples de áudio de int16_t para float (retornando novo vetor).
+ * 
+ * @param input Vetor de entrada com amostras de áudio em formato int16_t.
+ * @return Vetor de saída com amostras normalizadas em formato float.
+ */
+void normalize(const int16_t* input, size_t length, std::vector<float>& output) {
+    output.resize(length);
+    for (size_t i = 0; i < length; i++) {
+        output[i] = input[i] / 32768.0f;
+    }
+}
+void normalize(const std::vector<int16_t>& input, std::vector<float>& output) {
+    output.resize(input.size());
+    for (size_t i = 0; i < input.size(); i++) {
+        output[i] = input[i] / 32768.0f;
+    }
+}
+std::vector<float> normalize(const std::vector<int16_t>& input) {
+    std::vector<float> output;
+    normalize(input, output);
+    return output;
+}
+
+/**
 *   Detecta a palavra-chave "Zenira" no áudio capturado.
 *
-*   @param audio_samples Vetor contendo os samples de áudio capturados.
 *   @param signal Ponteiro para a estrutura signal_t que será preenchida.
-*   @param pcm_handle Ponteiro para o dispositivo de áudio PCM.
 *   @return true se a palavra-chave foi detectada, false caso contrário ou em caso de erro.
 */
-bool wake_word_detected(std::vector<float>& audio_samples, signal_t* signal, snd_pcm_t* pcm_handle) {
-    if (!get_audio_frame_signal(signal, pcm_handle)) {
-        std::cerr << "[ERRO] Falha ao capturar frame de áudio.\n";
-        return false;
-    }
-
+bool wake_word_detected(signal_t* signal) {
     ei_impulse_result_t result;
     EI_IMPULSE_ERROR res = run_classifier(signal, &result, false);
 
@@ -199,7 +288,7 @@ bool wake_word_detected(std::vector<float>& audio_samples, signal_t* signal, snd
     return false;
 }
 
-/*
+/**
 *   Cria um reconhecedor de comandos Vosk com um modelo pré-carregado.
 *
 *   @param model Ponteiro para o modelo Vosk carregado.
@@ -222,10 +311,10 @@ VoskRecognizer* create_command_recognizer(VoskModel* model) {
         "virar a direita", "virar a esquerda", "seguir reto"
     ])";
 
-    return vosk_recognizer_new_grm(model, SAMPLE_RATE, grammar);
+    return vosk_recognizer_new_grm(model, ALSA_SAMPLE_RATE, grammar);
 }
 
-/*
+/**
 *   Envia um comando para o MIC via CAN.
 *
 *   @param duty_cycle Valor do duty cycle para o motor (0-100).
@@ -256,7 +345,7 @@ void send_command_motor(int can_sock, uint8_t duty_cycle) {
 #endif
 }
 
-/*
+/**
 *   Envia um comando para o MDE via CAN.
 *
 *   @param posicao_graus_cem Posição da rabeta em centésimos de grau (±45.00 graus).
@@ -288,6 +377,189 @@ void send_command_tail(int can_sock, int16_t posicao_graus_cem) {
 #endif
 }
 
+/**
+ * Obtém o áudio do dispositivo de captura.
+ *
+ * @param audio Dispositivo de captura de áudio.
+ * @param raw_samples Buffer para armazenar os samples de áudio brutos.
+ * @param sample_length Número de samples a serem lidos (padrão: SAMPLE_LENGTH).
+ * @param op Operação a ser realizada: 'd' (downsample), 'n' (normalize), 'b' (both).
+ *
+ * @return Estrutura de sinal contendo os dados de áudio.
+ */
+signal_t get_audio(snd_pcm_t* audio, std::vector<int16_t>* raw_samples_ptr) {
+    if (!raw_samples_ptr) return {};
+
+    size_t offset = 0;
+    std::vector<int16_t>& raw_samples = *raw_samples_ptr;
+
+    // Preenche 1 segundo de áudio bruto
+    while (offset < raw_samples.size()) {
+        int frames_to_read = raw_samples.size() - offset;
+        int err = snd_pcm_readi(audio, raw_samples.data() + offset, frames_to_read);
+        if (err < 0) {
+            std::cerr << "[ERRO] Falha ao ler dados de áudio: " << snd_strerror(err) << std::endl;
+            snd_pcm_prepare(audio);
+            return {}; // sinal inválido
+        }
+        offset += err;
+    }
+
+    // Verifica sinal constante
+    if (check_constant_signal(raw_samples.data(), raw_samples.size())) {
+        std::cerr << "[INFO] Sinal de áudio constante detectado. Ignorando frame.\n";
+        return {};
+    }
+
+#if SAVE_TEST_WAV_RAW
+    std::stringstream ss;
+    ss << "teste_audio_raw_" << std::setw(3) << std::setfill('0') << wav_counter++ << ".wav";
+    save_wav(ss.str(), raw_samples, ALSA_SAMPLE_RATE);
+#endif
+
+    // Downsample e normalização conforme opção selecionada
+    if(ALSA_SAMPLE_RATE <= TARGET_SAMPLE_RATE) {
+        std::cerr << "[WARN] Frequência de entrada é menor ou igual a frequência alvo. Pulando downsample.\n";
+        converted_samples = raw_samples;
+    } else {
+        downsample(raw_samples, converted_samples);
+#if SAVE_TEST_WAV_DS
+        std::stringstream ss;
+        ss << "teste_audio_ds_" << std::setw(3) << std::setfill('0') << wav_counter++ << ".wav";
+        save_wav(ss.str(), converted_samples, TARGET_SAMPLE_RATE);
+#endif
+    }
+
+    normalize(converted_samples, float_samples);
+
+    // Preenche a estrutura de sinal
+    signal_t signal;
+    signal.total_length = float_samples.size();
+    signal.get_data = &get_signal_audio_data;
+    return signal;
+}
+
+/**
+ * Lê dados brutos de áudio do dispositivo de captura.
+ *
+ * @param audio Dispositivo de captura de áudio.
+ * @param raw_samples Buffer para armazenar os samples de áudio brutos.
+ * @param sample_length Número de samples a serem lidos (padrão: SAMPLE_LENGTH).
+ */
+void get_raw_audio(snd_pcm_t* audio, std::vector<int16_t> *raw_samples, size_t sample_length = SAMPLE_LENGTH) {
+    int err = snd_pcm_readi(audio, raw_samples->data(), sample_length);
+
+    // Verifica se houve erro na leitura
+    if (err != sample_length) {
+        std::cerr << "[ERRO] Falha ao ler dados de áudio: " << snd_strerror(err) << std::endl;
+        snd_pcm_prepare(audio);
+        return;
+    }
+
+    // Verifica se o sinal de áudio é constante
+    if (check_constant_signal(raw_samples->data(), sample_length)) {
+        std::cerr << "[INFO] Sinal de áudio constante detectado. Ignorando frame.\n";
+        return;
+    }
+}
+
+/**
+ * Verifica e executa comandos recebidos.
+ * 
+ * @param comando Comando reconhecido em formato string.
+ * @param can_sock Socket CAN já configurado.
+ */
+bool execute_commands(const std::string& comando, int can_sock) {
+    if (comando == "desligar motor") {
+        std::cout << "[INFO] Desligando motor.\n";
+        send_command_motor(can_sock, 0);
+    }
+    else if (comando == "ligar motor") {
+        std::cout << "[INFO] Ligando motor.\n";
+        send_command_motor(can_sock, 5); 
+    }
+    else if (comando == "mudar velocidade para dez" || 
+                comando == "velocidade para dez" || 
+                comando == "velocidade dez") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 10%.\n";
+        send_command_motor(can_sock, 10);
+    }
+    else if (comando == "mudar velocidade para vinte" || 
+                comando == "velocidade para vinte" || 
+                comando == "velocidade vinte") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 20%.\n";
+        send_command_motor(can_sock, 20);
+    }
+    else if (comando == "mudar velocidade para trinta" || 
+                comando == "velocidade para trinta" || 
+                comando == "velocidade trinta") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 30%.\n";
+        send_command_motor(can_sock, 30);
+    }
+    else if (comando == "mudar velocidade para quarenta" || 
+                comando == "velocidade para quarenta" || 
+                comando == "velocidade quarenta") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 40%.\n";
+        send_command_motor(can_sock, 40);
+    }
+    else if (comando == "mudar velocidade para cinquenta" || 
+                comando == "velocidade para cinquenta" || 
+                comando == "velocidade cinquenta") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 50%.\n";
+        send_command_motor(can_sock, 50);
+    }
+    else if (comando == "mudar velocidade para sessenta" || 
+                comando == "velocidade para sessenta" || 
+                comando == "velocidade sessenta") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 60%.\n";
+        send_command_motor(can_sock, 60);
+    }
+    else if (comando == "mudar velocidade para setenta" || 
+                comando == "velocidade para setenta" || 
+                comando == "velocidade setenta") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 70%.\n";
+        send_command_motor(can_sock, 70);
+    }
+    else if (comando == "mudar velocidade para oitenta" || 
+                comando == "velocidade para oitenta" || 
+                comando == "velocidade oitenta") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 80%.\n";
+        send_command_motor(can_sock, 80);
+    }
+    else if (comando == "mudar velocidade para noventa" || 
+                comando == "velocidade para noventa" || 
+                comando == "velocidade noventa") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 90%.\n";
+        send_command_motor(can_sock, 90);
+    }
+    else if (comando == "mudar velocidade para cem" || 
+                comando == "velocidade para cem" || 
+                comando == "velocidade cem") {
+        std::cout << "[INFO] Ajustando velocidade do motor para 100%.\n";
+        send_command_motor(can_sock, 100);
+    }
+    else if (comando == "virar a direita") {
+        std::cout << "[INFO] Virando a rabeta para a direita.\n";
+        send_command_tail(can_sock, +3000);
+    }
+    else if (comando == "virar a esquerda") {
+        std::cout << "[INFO] Virando a rabeta para a esquerda.\n";
+        send_command_tail(can_sock, -3000);
+    }
+    else if (comando == "seguir reto") {
+        std::cout << "[INFO] Ajustando rabeta para posição zero.\n";
+        send_command_tail(can_sock, 0);
+    }
+    else if (!comando.empty()) {
+        std::cout << "[INFO] Comando não reconhecido: " << comando << "\n";
+    }
+
+    return true;
+}
+
+/**
+ * Função principal do programa.
+ */
 int main() {
     setlogmask(LOG_UPTO(LOG_ERR));
     std::cout << "[INFO] Carregando modelo Vosk...\n";
@@ -301,10 +573,11 @@ int main() {
 
     signal_t signal;
     snd_pcm_t* audio = init_audio();
-    if (!audio) return 1;
 
-    std::vector<float> float_samples(SAMPLE_LENGTH);
-    short raw_samples[SAMPLE_LENGTH];
+    if (!audio) {
+        std::cerr << "[ERRO] PCM não inicializado!\n";
+        return 1;
+    }
 
 #if ENABLE_CAN
     int can_sock = setup_can();
@@ -320,124 +593,29 @@ int main() {
     std::cout << "[INFO] Aguardando palavra de ativação: \"zenira\"...\n";
 
     while (true) {
-        int err = snd_pcm_readi(audio, raw_samples, SAMPLE_LENGTH);
-        if (err != SAMPLE_LENGTH) {
-            std::cerr << "[ERRO] Falha ao ler dados de áudio: " << snd_strerror(err) << std::endl;
-            continue;
+        signal = get_audio(audio, &raw_samples);  
+        
+        if (signal.total_length == 0 || signal.get_data == nullptr) {
+            continue; // ou break para não tentar classificar
         }
 
-        if (check_constant_signal(raw_samples, SAMPLE_LENGTH)) {
-            std::cerr << "[INFO] Sinal de áudio constante detectado. Ignorando frame.\n";
-            continue;
-        }
-
-        for (int i = 0; i < SAMPLE_LENGTH; i++) {
-            float_samples[i] = raw_samples[i] / 32768.0f;
-        }
-
-
-        if (wake_word_detected(float_samples, &signal, audio)) {
+        if (wake_word_detected(&signal)) {
             std::cout << "[INFO] Iniciando reconhecimento de comandos com Vosk...\n";
             VoskRecognizer* recognizer = create_command_recognizer(model);
-
             bool comandoReconhecido = false;
             time_t inicio = time(nullptr);
             while (difftime(time(nullptr), inicio) < 5.0) {
-                snd_pcm_readi(audio, raw_samples, SAMPLE_LENGTH / 2);
-                if (vosk_recognizer_accept_waveform(recognizer, (const char*)raw_samples, (SAMPLE_LENGTH / 2) * sizeof(short))) {
-                    std::string result = vosk_recognizer_result(recognizer);
+                get_raw_audio(audio, &raw_samples, SAMPLE_LENGTH / 2);
+                if (vosk_recognizer_accept_waveform(recognizer, (const char*)raw_samples.data(), (SAMPLE_LENGTH / 2) * sizeof(int16_t))) {
+                    std::string  result = vosk_recognizer_result(recognizer);
                     Json::Reader reader;
-                    Json::Value root;
+                    Json::Value  root;
                     if (reader.parse(result, root)) {
                         std::string comando = root["text"].asString();
                         std::cout << "[COMANDO] Detectado: \"" << comando << "\"\n";
-
-                        uint8_t dados[] = {0x01};
-
-                        if (comando == "desligar motor") {
-                            std::cout << "[INFO] Desligando motor.\n";
-                            send_command_motor(can_sock, 0);
-                        }
-                        else if (comando == "ligar motor") {
-                            std::cout << "[INFO] Ligando motor.\n";
-                            send_command_motor(can_sock, 5); 
-                        }
-                        else if (comando == "mudar velocidade para dez" || 
-                                 comando == "velocidade para dez" || 
-                                 comando == "velocidade dez") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 10%.\n";
-                            send_command_motor(can_sock, 10);
-                        }
-                        else if (comando == "mudar velocidade para vinte" || 
-                                 comando == "velocidade para vinte" || 
-                                 comando == "velocidade vinte") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 20%.\n";
-                            send_command_motor(can_sock, 20);
-                        }
-                        else if (comando == "mudar velocidade para trinta" || 
-                                 comando == "velocidade para trinta" || 
-                                 comando == "velocidade trinta") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 30%.\n";
-                            send_command_motor(can_sock, 30);
-                        }
-                        else if (comando == "mudar velocidade para quarenta" || 
-                                 comando == "velocidade para quarenta" || 
-                                 comando == "velocidade quarenta") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 40%.\n";
-                            send_command_motor(can_sock, 40);
-                        }
-                        else if (comando == "mudar velocidade para cinquenta" || 
-                                 comando == "velocidade para cinquenta" || 
-                                 comando == "velocidade cinquenta") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 50%.\n";
-                            send_command_motor(can_sock, 50);
-                        }
-                        else if (comando == "mudar velocidade para sessenta" || 
-                                 comando == "velocidade para sessenta" || 
-                                 comando == "velocidade sessenta") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 60%.\n";
-                            send_command_motor(can_sock, 60);
-                        }
-                        else if (comando == "mudar velocidade para setenta" || 
-                                 comando == "velocidade para setenta" || 
-                                 comando == "velocidade setenta") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 70%.\n";
-                            send_command_motor(can_sock, 70);
-                        }
-                        else if (comando == "mudar velocidade para oitenta" || 
-                                 comando == "velocidade para oitenta" || 
-                                 comando == "velocidade oitenta") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 80%.\n";
-                            send_command_motor(can_sock, 80);
-                        }
-                        else if (comando == "mudar velocidade para noventa" || 
-                                 comando == "velocidade para noventa" || 
-                                 comando == "velocidade noventa") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 90%.\n";
-                            send_command_motor(can_sock, 90);
-                        }
-                        else if (comando == "mudar velocidade para cem" || 
-                                 comando == "velocidade para cem" || 
-                                 comando == "velocidade cem") {
-                            std::cout << "[INFO] Ajustando velocidade do motor para 100%.\n";
-                            send_command_motor(can_sock, 100);
-                        }
-                        else if (comando == "virar a direita") {
-                            std::cout << "[INFO] Virando a rabeta para a direita.\n";
-                            send_command_tail(can_sock, +3000);
-                        }
-                        else if (comando == "virar a esquerda") {
-                            std::cout << "[INFO] Virando a rabeta para a esquerda.\n";
-                            send_command_tail(can_sock, -3000);
-                        }
-                        else if (comando == "seguir reto") {
-                            std::cout << "[INFO] Ajustando rabeta para posição zero.\n";
-                            send_command_tail(can_sock, 0);
-                        }
-                        else if (!comando.empty()) {
-                            std::cout << "[INFO] Comando não reconhecido: " << comando << "\n";
-                        }
-
+#if ENABLE_CAN
+                        execute_commands(comando, can_sock);
+#endif
                         comandoReconhecido = true;
                         break;
                     }

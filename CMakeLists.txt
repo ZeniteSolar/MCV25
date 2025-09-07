@@ -28,7 +28,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/edge-impulse-sdk/tensorflow
     ${CMAKE_SOURCE_DIR}/edge-impulse-sdk/tensorflow/lite
     ${CMAKE_SOURCE_DIR}/edge-impulse-sdk/tensorflow/lite/c
-    ${CMAKE_SOURCE_DIR}/edge-impulse-sdk/tensorflow/lite/micro
+    ${CMAKE_SOURCE_DIR}/edge-impulse-sdk/tensorflow/lite/micro 
 )
 
 link_directories(
@@ -59,6 +59,7 @@ target_sources(app PRIVATE
 )
 
 target_link_libraries(app
+    PRIVATE sndfile # DEBUG
     ${CMAKE_SYSROOT}/opt/vosk/lib/libvosk.so
     asound
     jsoncpp

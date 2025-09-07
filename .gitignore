@@ -51,6 +51,7 @@ __pycache__/
 # Unused readme files
 README_CrossCompile.md
 README_Service.md
+README_Downsample.md
 
 # Test files
 audio.cpp
