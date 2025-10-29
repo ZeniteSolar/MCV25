@@ -57,7 +57,7 @@
 
 // Debug configs
 #define VOSK_LOG_LEVEL      1                                   // Nível de log do Vosk (0: desativado, 1: erros, 2: avisos)
-#define ENABLE_CAN          0                                   // Habilita ou desabilita o uso de CAN
+#define ENABLE_CAN          1                                   // Habilita ou desabilita o uso de CAN
 #define SAVE_TEST_WAV_RAW   0                                   // Salva arquivos WAV para debug antes do processamento
 #define SAVE_TEST_WAV_DS    0                                   // Salva arquivos WAV para debug depois do downsample
 

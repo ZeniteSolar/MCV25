@@ -52,6 +52,7 @@ __pycache__/
 README_CrossCompile.md
 README_Service.md
 README_Downsample.md
+README_Utils.md
 
 # Test files
 audio.cpp
