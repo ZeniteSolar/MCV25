@@ -404,31 +404,29 @@ void send_boat_state(int can_sock, bool boat_on) {
 // #endif  
 // }
 
-
 /**
-*   Envia um comando para o MDE via CAN.
-*
-*   @param posicao_graus_cem Posição da rabeta em centésimos de grau (±45.00 graus).
-*   @param can_sock Socket CAN já configurado.
-*/
-void send_command_tail(int can_sock, int16_t posicao_graus_cem) {
+ * Envia comando de posição da rabeta (steering) para o MIC19 via CAN.
+ *
+ * @param posicao_raw Valor do comando (0–789, onde 395 ≈ centro).
+ * @param can_sock Socket CAN configurado.
+ */
+void send_command_tail(int can_sock, uint16_t posicao_raw) {
 #if ENABLE_CAN
     uint8_t dados[CAN_MSG_MCV25_MDE_LENGTH];
 
-    // Garantia de limites físicos (±45.00 graus)
-    if (posicao_graus_cem < -4500) posicao_graus_cem = -4500;
-    if (posicao_graus_cem >  4500) posicao_graus_cem =  4500;
+    // Limita à faixa válida do ADC
+    if (posicao_raw > 789) posicao_raw = 789;
 
-    // Preenche assinatura
+    // Reduz 0–789 para 0–255 (8 bits)
+    uint8_t pos_scaled = static_cast<uint8_t>((posicao_raw * 255) / 789);
+
+    // Preenche mensagem
     dados[CAN_MSG_MCV25_MDE_SIGNATURE_BYTE] = CAN_SIGNATURE_MCV25;
-
-    // Conversão para little-endian
-    uint16_t pos_unsigned = static_cast<uint16_t>(posicao_graus_cem);
-    dados[CAN_MSG_MCV25_MDE_POSITION_L_BYTE] = pos_unsigned & 0xFF;
-    dados[CAN_MSG_MCV25_MDE_POSITION_H_BYTE] = (pos_unsigned >> 8) & 0xFF;
+    dados[CAN_MSG_MCV25_MDE_POSITION_L_BYTE] = pos_scaled;
 
     if (send_can(can_sock, CAN_MSG_MCV25_MDE_ID, dados, CAN_MSG_MCV25_MDE_LENGTH)) {
-        std::cout << "[INFO] Direção da rabeta: " << (posicao_graus_cem / 100.0f) << "°\n";
+        std::cout << "[INFO] Rabeta enviada via CAN: " 
+                  << posicao_raw << " (scaled=" << static_cast<int>(pos_scaled) << ")\n";
     } else {
         std::cerr << "[ERRO] Falha ao enviar comando de rabeta\n";
     }
@@ -436,6 +434,7 @@ void send_command_tail(int can_sock, int16_t posicao_graus_cem) {
     std::cout << "[INFO] CAN desativado. Comando de rabeta não enviado.\n";
 #endif
 }
+
 
 /**
  * Obtém o áudio do dispositivo de captura.
@@ -613,18 +612,18 @@ bool execute_commands(const std::string& comando, int can_sock) {
     }
     else if (comando == "virar a direita") {
         std::cout << "[INFO] Virando a rabeta para a direita.\n";
-        send_command_tail(can_sock, +3000);
+        send_command_tail(can_sock, 650);
     }
     else if (comando == "virar a esquerda" || 
             comando == "esquerda" || 
             comando == "virar a bombordo" || 
             comando == "bombordo"){
         std::cout << "[INFO] Virando a rabeta para a esquerda.\n";
-        send_command_tail(can_sock, -3000);
+        send_command_tail(can_sock, 150);
     }
     else if (comando == "seguir reto") {
         std::cout << "[INFO] Ajustando rabeta para posição zero.\n";
-        send_command_tail(can_sock, 0);
+        send_command_tail(can_sock, 395);
     }
     else if (!comando.empty()) {
         std::cout << "[INFO] Comando não reconhecido: " << comando << "\n";
