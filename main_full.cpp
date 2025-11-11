@@ -306,9 +306,11 @@ VoskRecognizer* create_command_recognizer(VoskModel* model) {
         "mudar velocidade para oitenta",   "velocidade para oitenta",   "velocidade oitenta",
         "mudar velocidade para noventa",   "velocidade para noventa",   "velocidade noventa",
         "mudar velocidade para cem",       "velocidade para cem",       "velocidade cem",
-        "desligar motor", "motor off",
-        "ligar motor", "motor on",
-        "virar a direita", "virar a esquerda", "seguir reto"
+        "desligar motor", "motor off", "ligar motor", "motor on",
+        "desligar barco", "barco off", "ligar barco", "barco on",
+        "virar a direita", "direita", "virar a estibordo", "estibordo",
+        "virar a esquerda", "esquerda", "virar a bombordo", "bombordo",
+        "seguir reto", "reto"
     ])";
 
     return vosk_recognizer_new_grm(model, ALSA_SAMPLE_RATE, grammar);
@@ -344,6 +346,64 @@ void send_command_motor(int can_sock, uint8_t duty_cycle) {
     std::cout << "[INFO] CAN desativado. Comando de motor não enviado.\n";
 #endif
 }
+
+/**
+*   Envia um comando para o MIC via CAN.
+*
+*   @param boat_on Status do barco [ON/OFF]
+*   @param can_sock Socket CAN já configurado.
+*/
+void send_boat_state(int can_sock, bool boat_on) {
+#if ENABLE_CAN
+    uint8_t dados[CAN_MSG_MCV25_BOAT_STATE_LENGTH] = {0};
+
+    // Preenchimento da estrutura da mensagem:
+    dados[CAN_MSG_MCV25_BOAT_STATE_SIGNATURE_BYTE] = CAN_SIGNATURE_MCV25;
+
+    if (boat_on) {
+        // Seta o bit especificado sem alterar outros bits
+        dados[CAN_MSG_MCV25_BOAT_STATE_BOAT_ON_BYTE] |= 
+            (1 << CAN_MSG_MCV25_BOAT_STATE_BOAT_ON_BOAT_ON_BIT);
+    } else {
+        // Limpa o bit especificado sem alterar outros bits
+        dados[CAN_MSG_MCV25_BOAT_STATE_BOAT_ON_BYTE] &= 
+            ~(1 << CAN_MSG_MCV25_BOAT_STATE_BOAT_ON_BOAT_ON_BIT);
+    }
+
+    if(send_can(can_sock, CAN_MSG_MCV25_BOAT_STATE_ID, dados, CAN_MSG_MCV25_BOAT_STATE_LENGTH)){
+        std::cout << "[Info] Barco " << (boat_on ? "ligado" : "desligado") << "\n";
+    } else {
+        std::cerr << "[ERRO] Falha ao enviar comando de status do barco.\n";
+    }
+#else
+    std::cout << "[INFO] CAN desativado. Comando de status do barco não enviado.\n";   
+#endif
+}
+
+/**
+*   Envia um comando para o MIC via CAN.
+*
+*   @param motor_on Status do motor [ON/OFF]
+*   @param can_sock Socket CAN já configurado.
+*/
+// void send_motor_state(int can_sock, bool motor_on) {
+// #if ENABLE_CAN
+//     uint8_t dados[CAN_MSG_MCV25_MOTOR_STATE_LENGTH];
+
+//     // Preenchimento da estrutura da mensagem:
+//     dados[CAN_MSG_MCV25_MOTOR_STATE_SIGNATURE_BYTE] = CAN_SIGNATURE_MCV25;
+//     dados[CAN_MSG_MCV25_MOTOR_STATE_BYTE] = motor_on ? 1 : 0;
+
+//     if(send_can(can_sock, CAN_MSG_MCV25_MOTOR_STATE_ID, dados, CAN_MSG_MCV25_MOTOR_STATE_LENGTH)){
+//         std::cout << "[Info] Motor " << (motor_on ? "ligado" : "desligado") << "\n";
+//     } else {
+//         std::cerr << "[ERRO] Falha ao enviar comando de status do motor.\n";
+//     }
+// #else
+//     std::cout << "[INFO] CAN desativado. Comando de status do motor não enviado.\n";
+// #endif  
+// }
+
 
 /**
 *   Envia um comando para o MDE via CAN.
@@ -470,13 +530,26 @@ void get_raw_audio(snd_pcm_t* audio, std::vector<int16_t> *raw_samples, size_t s
  * @param can_sock Socket CAN já configurado.
  */
 bool execute_commands(const std::string& comando, int can_sock) {
-    if (comando == "desligar motor") {
+
+    if (comando == "desligar motor" || 
+            comando == "motor off") {
         std::cout << "[INFO] Desligando motor.\n";
         send_command_motor(can_sock, 0);
     }
-    else if (comando == "ligar motor") {
+    else if (comando == "ligar motor" || 
+            comando == "motor on") {
         std::cout << "[INFO] Ligando motor.\n";
         send_command_motor(can_sock, 5); 
+    }
+    else if (comando == "desligar barco" || 
+                comando == "barco off"){
+        std::cout << "[INFO] Desligando barco.\n";
+        send_boat_state(can_sock, false);
+    }
+    else if (comando == "ligar barco" || 
+                comando == "barco on"){
+        std::cout << "[INFO] Ligando barco.\n";
+        send_boat_state(can_sock, true);
     }
     else if (comando == "mudar velocidade para dez" || 
                 comando == "velocidade para dez" || 
@@ -542,7 +615,10 @@ bool execute_commands(const std::string& comando, int can_sock) {
         std::cout << "[INFO] Virando a rabeta para a direita.\n";
         send_command_tail(can_sock, +3000);
     }
-    else if (comando == "virar a esquerda") {
+    else if (comando == "virar a esquerda" || 
+            comando == "esquerda" || 
+            comando == "virar a bombordo" || 
+            comando == "bombordo"){
         std::cout << "[INFO] Virando a rabeta para a esquerda.\n";
         send_command_tail(can_sock, -3000);
     }
