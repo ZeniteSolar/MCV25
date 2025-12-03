@@ -5,8 +5,17 @@
 /build/
 /build-*/
 build.log
-build.sh
+# build.sh
 /build-rpi/
+/build-aarch64/
+/build-armv7/
+build_aarch64.sh
+build_armv7.sh
+
+# Toolchain files
+# toolchains/
+# toolchain-aarch64.cmake
+# toolchain-armv7.cmake
 
 # CMake generated files
 CMakeFiles/
@@ -42,14 +51,18 @@ __pycache__/
 *.pyc
 
 # Cross Compilation files (too large)
-/rpi-sysroot/lib/
-/rpi-sysroot/usr/
+/rpi-sysroot-aarch64/
+/rpi-sysroot-armv7/
+/toolchains/
+fixup_rpi_sysroot.sh
 
 # Vscode workspace settings
 .vscode/settings.json
 
 # Unused readme files
-README_CrossCompile.md
+/textfiles/
+README_CrossCompile_armv7.md
+README_CrossCompile_aarch64.md
 README_Service.md
 README_Downsample.md
 README_Utils.md
@@ -58,3 +71,6 @@ README_Utils.md
 audio.cpp
 audio.h
 main_wakeword.cpp
+
+# Raspberry Pi tools
+/rpi-tools/
