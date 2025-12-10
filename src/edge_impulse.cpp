@@ -8,7 +8,7 @@
 #include "edge-impulse-sdk/classifier/ei_run_classifier.h"
 #include "edge_impulse.h"
 
-/*   Detecta a palavra-chave "Zenira" no áudio capturado.
+/* Detecta a palavra-chave "Zenira" no áudio capturado.
 *
 *   @param signal Ponteiro para a estrutura signal_t que será preenchida.
 *   @return true se a palavra-chave foi detectada, false caso contrário ou em caso de erro.

@@ -17,10 +17,15 @@
 #define VOSK_SAMPLE_RATE    16000 // Não alterar, Vosk usa 16kHz
 #define INPUT_SAMPLE_RATE   44100 // Frequência de captura do ALSA
 
-VoskModel* load_vosk_model(const std::string& path);
- 
-VoskRecognizer* create_command_recognizer(VoskModel* model);
+class Vosk {
+public:
+    Vosk();
+    ~Vosk();
 
-std::string vosk_process(VoskRecognizer* rec);
+    VoskModel* load_vosk_model(const std::string& path);
+    VoskRecognizer* create_command_recognizer(VoskModel* model);
+    std::string vosk_process(VoskRecognizer* rec);
+
+};
 
 #endif

@@ -22,7 +22,7 @@ using signal_t = ei::signal_t;
 // Debug configs
 #define LOGS_ERRO_EI           0                                   // Habilita ou desabilita logs de erro e de aviso
 #define LOGS_INFO_EI           0                                   // Habilita ou desabilita logs informativos
-#define CLASSIFIER_VERBOSE     1
+#define CLASSIFIER_VERBOSE     0
 
 /**
  *  Detecta a palavra-chave "Zenira" no áudio capturado.

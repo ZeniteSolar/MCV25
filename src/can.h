@@ -25,26 +25,46 @@
 #define CAN_INTERFACE "can0"  // Interface padrão do MCP2515
 
 // Debug configs
-#define LOGS_ERROS_CAN           0                                   // Habilita ou desabilita logs de erro e de aviso
-#define LOGS_INFOS_CAN           0                                   // Habilita ou desabilita logs informativos
+#define LOGS_ERROS_CAN 0  // Habilita ou desabilita logs de erro e de aviso
+#define LOGS_INFOS_CAN 0  // Habilita ou desabilita logs informativos
 
-// Inicializa o socket CAN (retorna o descritor ou -1 se erro)
-int setup_can(void);
+// Estrutura para armazenar ângulo e direção da rabeta
+struct TailCommand {
+    uint8_t angle;      // Ângulo em graus (0-90)
+    uint8_t direction;  // 0 = esquerda (bombordo), 1 = direita (estibordo)
+};
 
-// Envia um frame CAN genérico
-bool send_can(int sock, uint32_t can_id, const uint8_t* data, uint8_t dlc);
+// Estrutura para armazenas duty cycle e estado do motor
+struct MotorCommand {
+    uint8_t duty_cycle;
+    uint8_t motor_on;  // 1 = motor ligado, 0 = motor desligado
+};
 
-// Recebe um frame CAN genérico
-bool receive_can(int sock, struct can_frame& frame);
 
-// Fecha o socket CAN
-void close_can(int sock);
+class Can {
+public:
+    Can();
+    ~Can();
 
-void send_command_tail(int sock, uint16_t posicao_raw);
-void send_command_motor(int sock, uint8_t duty);
-void send_boat_state(int sock, bool boat_on);
+    // Metodos de inicializacao e finalizacao
+    int setup_can(void);
+    void close_can(int sock);
 
-// Parser para comandos transcritos ("virar direita", "motor off", etc...)
-bool execute_commands(const std::string& comando, int sock);
+    // Metodos de envio e recebimento
+    bool send_can(int sock, uint32_t can_id, const uint8_t* data, uint8_t dlc);
+    bool receive_can(int sock, struct can_frame& frame);
+
+    // Metodo geral de comando
+    bool execute_commands(const std::string& comando, int sock);
+
+private:
+
+    // Metodos de comando especificos
+    void send_command_motor(int sock, uint8_t duty_cycle, uint8_t motor_on);
+    void send_command_tail(int sock, uint8_t angle, uint8_t direction);
+    void send_boat_state(int sock, bool boat_on);
+    void send_motor_state(int can_sock, bool motor_on);
+
+};
 
 #endif

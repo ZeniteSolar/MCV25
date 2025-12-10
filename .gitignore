@@ -4,23 +4,14 @@
 # Build directories
 /build/
 /build-*/
-build.log
-# build.sh
-/build-rpi/
-/build-aarch64/
-/build-armv7/
 build_aarch64.sh
 build_armv7.sh
 
 # Toolchain files
-# toolchains/
-# toolchain-aarch64.cmake
-# toolchain-armv7.cmake
+/toolchains/
 
 # CMake generated files
 CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
 Makefile
 
 # Compiled object files, binaries, libraries
@@ -53,24 +44,25 @@ __pycache__/
 # Cross Compilation files (too large)
 /rpi-sysroot-aarch64/
 /rpi-sysroot-armv7/
-/toolchains/
-fixup_rpi_sysroot.sh
 
 # Vscode workspace settings
 .vscode/settings.json
 
-# Unused readme files
+# Unused readme and text files
 /textfiles/
-README_CrossCompile_armv7.md
-README_CrossCompile_aarch64.md
-README_Service.md
-README_Downsample.md
-README_Utils.md
 
 # Test files
-audio.cpp
-audio.h
 main_wakeword.cpp
 
 # Raspberry Pi tools
 /rpi-tools/
+
+# VSCode Configurations
+/.vscode/
+
+# Optimization and Analysis scripts and files
+/scripts/
+
+# Specific files
+src/audio_threaded.cpp
+src/audio_threaded.h

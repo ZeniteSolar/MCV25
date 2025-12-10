@@ -1,8 +1,9 @@
+#!/bin/bash
+
 # Este script compila o aplicativo para Raspberry Pi, usando a toolchain adequada
 # para a arquitetura especificada (armv7 ou aarch64).
 # Uso: ./build.sh <arch>
 
-#!/bin/bash
 set -e
 
 ARCH="$1"
