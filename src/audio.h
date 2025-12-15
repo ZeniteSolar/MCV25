@@ -50,7 +50,7 @@ using signal_t = ei::signal_t;
 #define SAVE_TEST_WAV_RAW   0       // Salva arquivos WAV para debug antes do processamento
 #define SAVE_TEST_WAV_DS    0       // Salva arquivos WAV para debug depois do downsample
 #define LOGS_ERRO_AUDIO     0       // Habilita ou desabilita logs de erro e de aviso
-#define LOGS_INFO_AUDIO     0       // Habilita ou desabilita logs informativos
+#define LOGS_INFO_AUDIO     1       // Habilita ou desabilita logs informativos
 
 class Audio {
 public:

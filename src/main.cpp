@@ -20,7 +20,7 @@
 
 /* Defines */
 #define LOGS_ERRO          0  // Habilita ou desabilita logs de erro e de aviso
-#define LOGS_INFO          0  // Habilita ou desabilita logs informativos
+#define LOGS_INFO          1  // Habilita ou desabilita logs informativos
 #define VOSK_LOG_LEVEL     0  // Nível de log do Vosk (0: desativado, 1: erros, 2: avisos)
 #define ENABLE_CAN         1  // Habilita ou desabilita o uso de CAN
 

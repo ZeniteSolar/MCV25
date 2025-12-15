@@ -38,10 +38,21 @@
 #include <stdint.h>
 // needed for standalone C example
 #include "model-parameters/model_metadata.h"
+#include "edge-impulse-sdk/dsp/numpy_types.h"
 
 #ifndef EI_CLASSIFIER_MAX_OBJECT_DETECTION_COUNT
 #define EI_CLASSIFIER_MAX_OBJECT_DETECTION_COUNT 10
 #endif
+
+// Whether ei_result_t classification field is statically allocated on the result struct or not
+#if defined(EI_DSP_RESULT_OVERRIDE)
+#define EI_IMPULSE_RESULT_CLASSIFICATION_IS_STATICALLY_ALLOCATED    0
+#elif defined(EI_CLASSIFIER_LABEL_COUNT)
+// statically allocate
+#define EI_IMPULSE_RESULT_CLASSIFICATION_IS_STATICALLY_ALLOCATED    1
+#else
+#define EI_IMPULSE_RESULT_CLASSIFICATION_IS_STATICALLY_ALLOCATED    0
+#endif // EI_CLASSIFIER_LABEL_COUNT && EI_CLASSIFIER_LABEL_COUNT > 0
 
 /**
  * @defgroup ei_structs Structs
@@ -197,7 +208,7 @@ typedef struct {
 
     /**
      * Amount of time (in milliseconds) it took to run anomaly detection. Valid only if
-     * `EI_CLASSIFIER_HAS_ANOMALY == 1`.
+     * the impulse contains an anomaly detection block, otherwise 0.
      */
     int anomaly;
 
@@ -213,7 +224,7 @@ typedef struct {
 
     /**
      * Amount of time (in microseconds) it took to run anomaly detection. Valid only if
-     * `EI_CLASSIFIER_HAS_ANOMALY == 1`.
+     * the impulse contains an anomaly detection block, otherwise 0.
      */
     int64_t anomaly_us;
 } ei_impulse_result_timing_t;
@@ -263,18 +274,17 @@ typedef struct {
      * Array of classification results. If object detection is enabled, this will be
      * empty.
      */
-#ifdef EI_DSP_RESULT_OVERRIDE
-    // For CI only.  We will create the array to hold results
-    ei_impulse_result_classification_t* classification;
-#else
-#if EI_CLASSIFIER_LABEL_COUNT == 0
+#if EI_IMPULSE_RESULT_CLASSIFICATION_IS_STATICALLY_ALLOCATED == 1
+  #if EI_CLASSIFIER_LABEL_COUNT == 0
     // EI_CLASSIFIER_LABEL_COUNT can be 0 for anomaly only models
     // to prevent compiler warnings/errors, we need to have at least one element
     ei_impulse_result_classification_t classification[1];
-#else
+  #else
     ei_impulse_result_classification_t classification[EI_CLASSIFIER_LABEL_COUNT];
-#endif // EI_CLASSIFIER_LABEL_COUNT == 0
-#endif // EI_DSP_RESULT_OVERRIDE else
+  #endif // EI_CLASSIFIER_LABEL_COUNT == 0
+#else
+    ei_impulse_result_classification_t* classification;
+#endif
 
     /**
      * Anomaly score. If anomaly detection is not enabled, this will be 0. A higher
@@ -287,13 +297,21 @@ typedef struct {
      * Timing information for the processing (DSP) and inference blocks.
      */
     ei_impulse_result_timing_t timing;
-
+#ifdef __cplusplus
     /**
-     * Copy the output data to a buffer. If set to false, the output data will be
-     * returned as a pointer to the internal buffer. If set to true, the output data
-     * will be copied to the buffer provided in `ei_impulse_output_t`.
+     * Raw outputs from the neural network. The number of elements in this array is
+     * equal to the number of learning blocks in the model.
+     * INTERNAL
+     * EXPERIMENTAL
      */
-    bool copy_output;
+    ei_feature_t* _raw_outputs;
+#else
+    /** padding for C bindings to make sure the struct is the same size
+     * INTERNAL
+     * EXPERIMENTAL
+     */
+    void* _padding;
+#endif
 #if EI_CLASSIFIER_HAS_VISUAL_ANOMALY || __DOXYGEN__
     /**
      * Array of grid cells of the detected visual anomalies, if visual anomaly detection

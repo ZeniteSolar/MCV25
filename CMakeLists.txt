@@ -62,6 +62,7 @@ add_executable(app
     src/audio.cpp
     src/vosk.cpp
     src/edge_impulse.cpp
+    # src/thread_manager.cpp
 )
 
 # ----------------------------------------------------------------------
@@ -76,7 +77,7 @@ target_sources(app PRIVATE ${MODEL_SOURCE})
 
 # Modelo principal (compilado)
 target_sources(app PRIVATE
-    tflite-model/tflite_learn_5_compiled.cpp
+    tflite-model/tflite_learn_546289_5_compiled
 )
 
 # ----------------------------------------------------------------------

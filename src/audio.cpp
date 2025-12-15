@@ -15,6 +15,7 @@
 #endif
 
 static const float INT16_RECIPROCAL = 1.0f / 32768.0f;
+static uint16_t wav_counter = 0;
 
 /** Construtor da classe Audio
  * Inicializa os vetores com tamanhos apropriados
