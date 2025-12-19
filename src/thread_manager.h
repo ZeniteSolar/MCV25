@@ -11,6 +11,15 @@
  * - Queue-based communication (inter-thread)
  * - Sincronização segura com mutexes e condition variables
  * - Detecção básica de deadlock
+ * 
+ * Não está atualmente funcionando porém pode servir de base para um futura implementação
+ * 
+ * Ganho esperado:
+ * A Vosk não é thread-safe portanto deve rodar em uma thread única.
+ * O ideal seria separar o restante dos sistemas em threads diferentes, como a wake-word
+ * e o envio de mensagens CAN, porém como a Vosk é responsável pelo maior consumo da CPU 
+ * (evidenciado pelos picos de utilização de CPU de 10% para 70% ao iniciar a Vosk),
+ * a melhora pode não ser tão grande, pois ainda teremos 60% rodando em uma thread única.
  */
 
 #ifndef THREAD_MANAGER_H
