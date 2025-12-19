@@ -28,32 +28,36 @@
  * either express or implied. See the License for the specific language governing
  * permissions, disclaimers and limitations under the License.
  */
-// Generated on: 15.12.2025 18:32:00
 
-#ifndef tflite_learn_546289_5_GEN_H
-#define tflite_learn_546289_5_GEN_H
+#ifndef _EI_CLASSIFIER_TFLITE_LEARN_546289_5_H_
+#define _EI_CLASSIFIER_TFLITE_LEARN_546289_5_H_
 
-#include "edge-impulse-sdk/tensorflow/lite/c/common.h"
+// NOTE: As of February 2025 we've changed the default way to include binary model files.
+// Instead of embedding the file as as a byte array in this file, we now use INCBIN instead;
+// as it yields much shorter link times, and lower memory usage when building applications.
+// If this causes issues to your builds (maybe the reason why you're visiting this file)
+// you can go to **Dashboard > Experiments > Use xxd instead of INCBIN to link TFLite/ONNX files**
+// to re-enable the previous behavior. Please also let us know at the forum (https://forum.edgeimpulse.com/)
+// or through your Solutions Engineers (if applicable) what target you're building for, and what
+// issues arise.
 
-// Sets up the model with init and prepare steps.
-TfLiteStatus tflite_learn_546289_5_init( void*(*alloc_fnc)(size_t,size_t) );
-// Returns the input tensor with the given index.
-TfLiteStatus tflite_learn_546289_5_input(int index, TfLiteTensor* tensor);
-// Returns the output tensor with the given index.
-TfLiteStatus tflite_learn_546289_5_output(int index, TfLiteTensor* tensor);
-// Runs inference for the model.
-TfLiteStatus tflite_learn_546289_5_invoke();
-//Frees memory allocated
-TfLiteStatus tflite_learn_546289_5_reset( void (*free)(void* ptr) );
+#define INCBIN_STYLE INCBIN_STYLE_SNAKE
 
-
-// Returns the number of input tensors.
-inline size_t tflite_learn_546289_5_inputs() {
-  return 1;
-}
-// Returns the number of output tensors.
-inline size_t tflite_learn_546289_5_outputs() {
-  return 1;
-}
-
+#if defined(EI_MODEL_SECTION)
+#define STRINGIZE(x) #x
+#define STRINGIZE_VALUE_OF(x) STRINGIZE(x)
+#define INCBIN_OUTPUT_SECTION STRINGIZE_VALUE_OF(EI_MODEL_SECTION)
 #endif
+
+#include "edge-impulse-sdk/third_party/incbin/incbin.h"
+
+#define EI_CLASSIFIER_TFLITE_LEARN_546289_5_ARENA_SIZE     6265
+const size_t tflite_learn_546289_5_arena_size = 6265;
+
+INCBIN(incbin_tflite_learn_546289_5, "tflite-model/tflite_learn_546289_5.tflite");
+
+const unsigned char *tflite_learn_546289_5 = gincbin_tflite_learn_546289_5_data;
+unsigned int tflite_learn_546289_5_len = gincbin_tflite_learn_546289_5_size;
+
+#endif // _EI_CLASSIFIER_TFLITE_LEARN_546289_5_H_
+

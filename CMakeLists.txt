@@ -77,7 +77,7 @@ target_sources(app PRIVATE ${MODEL_SOURCE})
 
 # Modelo principal (compilado)
 target_sources(app PRIVATE
-    tflite-model/tflite_learn_546289_5_compiled
+    tflite-model/tflite_learn_546289_5
 )
 
 # ----------------------------------------------------------------------

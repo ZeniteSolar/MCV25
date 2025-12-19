@@ -14,6 +14,8 @@
 #include <arm_neon.h>
 #endif
 
+#include <cmath>
+
 static const float INT16_RECIPROCAL = 1.0f / 32768.0f;
 static uint16_t wav_counter = 0;
 
@@ -157,9 +159,9 @@ signal_t Audio::get_audio(snd_pcm_t* audio, std::vector<int16_t>* raw_samples_pt
     }
 
 #if SAVE_TEST_WAV_RAW
-    std::stringstream ss;
-    ss << "teste_audio_raw_" << std::setw(3) << std::setfill('0') << wav_counter++ << ".wav";
-    save_wav(ss.str(), raw_samples, ALSA_SAMPLE_RATE);
+    std::stringstream ss1;
+    ss1 << "teste_audio_raw_" << std::setw(3) << std::setfill('0') << wav_counter++ << ".wav";
+    save_wav(ss1.str(), raw_samples, ALSA_SAMPLE_RATE);
 #endif
 
     // Downsample e normalização conforme opção selecionada
@@ -171,13 +173,64 @@ signal_t Audio::get_audio(snd_pcm_t* audio, std::vector<int16_t>* raw_samples_pt
     } else {
         downsample(raw_samples, converted_samples);
 #if SAVE_TEST_WAV_DS
-        std::stringstream ss;
-        ss << "teste_audio_ds_" << std::setw(3) << std::setfill('0') << wav_counter++ << ".wav";
-        save_wav(ss.str(), converted_samples, TARGET_SAMPLE_RATE);
+        std::stringstream ss2;
+        ss2 << "teste_audio_ds_" << std::setw(3) << std::setfill('0') << wav_counter++ << ".wav";
+        save_wav(ss2.str(), converted_samples, TARGET_SAMPLE_RATE);
 #endif
     }
 
     normalize(converted_samples, float_samples);
+
+#if HIGHPASS_FILTER_ENABLE
+    // Aplicar filtro passa-alta para redução de ruído de vento (otimizado para 16kHz)
+    highpass_filter(float_samples, HIGHPASS_CUTOFF_FREQ, TARGET_SAMPLE_RATE, HIGHPASS_FILTER_ORDER);
+#if SAVE_TEST_WAV_HP
+    // Salvar arquivo WAV para debug após filtro passa-alta
+    std::stringstream ss3;
+    ss3 << "teste_audio_hp_" << std::setw(3) << std::setfill('0') << wav_counter++ << ".wav";
+    // Converter float samples de volta para int16_t para salvar
+    std::vector<int16_t> hp_int_samples(float_samples.size());
+    for (size_t i = 0; i < float_samples.size(); ++i) {
+        float clamped = std::max(-1.0f, std::min(1.0f, float_samples[i]));
+        hp_int_samples[i] = static_cast<int16_t>(clamped * 32767.0f);
+    }
+    save_wav(ss3.str(), hp_int_samples, TARGET_SAMPLE_RATE);
+#endif
+#endif
+
+#if AUDIO_DENOISE_ENABLE
+    // Aplicar suavização adaptativa após o filtro
+    adaptive_denoise(float_samples);
+#if SAVE_TEST_WAV_DN
+    // Salvar arquivo WAV para debug após suavização adaptativa
+    std::stringstream ss4;
+    ss4 << "teste_audio_dn_" << std::setw(3) << std::setfill('0') << wav_counter++ << ".wav";
+    // Converter float samples de volta para int16_t para salvar
+    std::vector<int16_t> dn_int_samples(float_samples.size());
+    for (size_t i = 0; i < float_samples.size(); ++i) {
+        float clamped = std::max(-1.0f, std::min(1.0f, float_samples[i]));
+        dn_int_samples[i] = static_cast<int16_t>(clamped * 32767.0f);
+    }   
+    save_wav(ss4.str(), dn_int_samples, TARGET_SAMPLE_RATE);
+#endif
+
+#if AUDIO_GAIN_ENABLE
+    // Aplicar ganho adaptativo para compensar atenuação dos filtros
+    adaptive_gain(float_samples, AUDIO_GAIN_TARGET_RMS);
+#endif
+#if SAVE_TEST_WAV_AG
+    // Salvar arquivo WAV para debug após suavização adaptativa
+    std::stringstream ss5;
+    ss5 << "teste_audio_ag_" << std::setw(3) << std::setfill('0') << wav_counter++ << ".wav";
+    // Converter float samples de volta para int16_t para salvar
+    std::vector<int16_t> ag_int_samples(float_samples.size());
+    for (size_t i = 0; i < float_samples.size(); ++i) {
+        float clamped = std::max(-1.0f, std::min(1.0f, float_samples[i]));
+        ag_int_samples[i] = static_cast<int16_t>(clamped * 32767.0f);
+    }   
+    save_wav(ss5.str(), ag_int_samples, TARGET_SAMPLE_RATE);
+#endif
+#endif
 
     // Preenche a estrutura de sinal
     signal_t signal;
@@ -396,4 +449,206 @@ void Audio::run_audio(const std::string &filename) {
         std::cout << "[INFO] Arquivo reproduzido com sucesso: " << filepath << std::endl;
     }
 #endif
+}
+
+/**
+ * Aplica um filtro passa-alta adaptativo IIR ao sinal de áudio.
+ * 
+ * Remove ruído de baixa frequência (como vento) de forma suave, preservando
+ * a qualidade da fala humana. Pode usar 1ª ou 2ª ordem de filtro.
+ * 
+ * @param signal - referência ao vetor de amostras float a ser filtrado (IN/OUT)
+ * @param cutoff_freq - frequência de corte em Hz (padrão: 80 Hz para preservar fala)
+ * @param sample_rate - taxa de amostragem em Hz (padrão: 16000 Hz)
+ * @param order - ordem do filtro (1=menos agressivo, 2=mais agressivo)
+ * @return void
+ */
+void Audio::highpass_filter(std::vector<float>& signal, float cutoff_freq, float sample_rate, int order) {
+    if (signal.empty() || cutoff_freq <= 0 || sample_rate <= 0) {
+        return;
+    }
+    
+    // Normalizar frequência de corte
+    float normalized_freq = cutoff_freq / sample_rate;
+    if (normalized_freq >= 1.0f) normalized_freq = 0.99f;
+    if (normalized_freq <= 0.0f) normalized_freq = 0.01f;
+    
+    const float PI = 3.14159265358979f;
+    float w = 2.0f * PI * normalized_freq;
+    
+    if (order == 1) {
+        // ===== FILTRO PASSA-ALTA DE 1ª ORDEM (MENOS AGRESSIVO) =====
+        // Equação: y[n] = a * (y[n-1] + x[n] - x[n-1])
+        // onde a = tan(w/2) / (1 + tan(w/2))
+        
+        float tan_half = std::tan(w / 2.0f);
+        float a = tan_half / (1.0f + tan_half);
+        
+#if LOGS_INFO_AUDIO
+        std::cout << "[INFO] Filtro passa-alta 1ª ordem aplicado: fc=" << cutoff_freq 
+                  << "Hz, a=" << a << ", fs=" << sample_rate << "Hz\n";
+#endif
+        
+        float y_prev = filter_state_[0];
+        float x_prev = last_input_;
+        
+        for (size_t i = 0; i < signal.size(); i++) {
+            float x_n = signal[i];
+            // Aplicar filtro: y[n] = a * (y[n-1] + x[n] - x[n-1])
+            float y_n = a * (y_prev + x_n - x_prev);
+            
+            signal[i] = y_n;
+            x_prev = x_n;
+            y_prev = y_n;
+        }
+        
+        filter_state_[0] = y_prev;
+        last_input_ = x_prev;
+        
+    } else {
+        // ===== FILTRO PASSA-ALTA DE 2ª ORDEM (MAIS AGRESSIVO) =====
+        // Mantém a implementação anterior
+        
+        float c = std::tan(w / 2.0f);
+        float c2 = c * c;
+        
+        // Coeficientes de 2ª ordem
+        float b0 = 1.0f / (1.0f + c * 1.414213562f + c2);
+        float b1 = -2.0f * b0;
+        float b2 = b0;
+        
+        float a1 = 2.0f * (1.0f - c2) * b0;
+        float a2 = (1.0f - c * 1.414213562f + c2) * b0;
+        
+#if LOGS_INFO_AUDIO
+        std::cout << "[INFO] Filtro passa-alta 2ª ordem aplicado: fc=" << cutoff_freq 
+                  << "Hz, fs=" << sample_rate << "Hz\n";
+#endif
+        
+        float x_n_minus_1 = last_input_;
+        float x_n_minus_2 = last_input_2_;
+        float y_n_minus_1 = filter_state_[0];
+        float y_n_minus_2 = filter_state_[1];
+        
+        for (size_t i = 0; i < signal.size(); i++) {
+            float x_n = signal[i];
+            float y_n = b0 * x_n + b1 * x_n_minus_1 + b2 * x_n_minus_2
+                        - a1 * y_n_minus_1 - a2 * y_n_minus_2;
+            
+            signal[i] = y_n;
+            x_n_minus_2 = x_n_minus_1;
+            x_n_minus_1 = x_n;
+            y_n_minus_2 = y_n_minus_1;
+            y_n_minus_1 = y_n;
+        }
+        
+        last_input_ = x_n_minus_1;
+        last_input_2_ = x_n_minus_2;
+        filter_state_[0] = y_n_minus_1;
+        filter_state_[1] = y_n_minus_2;
+    }
+}
+
+/**
+ * Aplica suavização adaptativa ao sinal de áudio.
+ * Remove cliques, pops e ruído de alta frequência sem afetar a fala.
+ * 
+ * @param signal - referência ao vetor de amostras float a ser suavizado (IN/OUT)
+ * @param threshold - limiar adaptativo para detecção de picos (padrão: 0.02)
+ * @return void
+ */
+void Audio::adaptive_denoise(std::vector<float>& signal, float threshold) {
+    if (signal.size() < 3) return;
+    
+    // Calcular energia média do sinal
+    float energy_sum = 0.0f;
+    for (float sample : signal) {
+        energy_sum += sample * sample;
+    }
+    float avg_energy = energy_sum / signal.size();
+    float threshold_adaptive = threshold * std::sqrt(avg_energy + 1e-6f);
+    
+    // Aplicar suavização tipo mediana móvel (3-tap)
+    std::vector<float> smoothed = signal;
+    
+    for (size_t i = 1; i < signal.size() - 1; i++) {
+        float prev = signal[i - 1];
+        float curr = signal[i];
+        float next = signal[i + 1];
+        
+        // Calcular diferença em relação aos vizinhos
+        float diff_prev = std::abs(curr - prev);
+        float diff_next = std::abs(curr - next);
+        
+        // Se há grande diferença (spike/click), suavizar
+        if (diff_prev > threshold_adaptive || diff_next > threshold_adaptive) {
+            // Média ponderada: mais peso para a amostra atual, menos para outliers
+            smoothed[i] = 0.5f * curr + 0.25f * prev + 0.25f * next;
+        }
+    }
+    
+    signal = smoothed;
+}
+
+/**
+ * Aplica ganho adaptativo ao sinal para normalizar amplitude.
+ * Compensa a atenuação causada pelos filtros passa-alta e suavização.
+ * 
+ * @param signal - referência ao vetor de amostras float a ser amplificado (IN/OUT)
+ * @param target_rms - nível RMS alvo (0.0-1.0, típico 0.3 para preservar dinâmica)
+ * @return void
+ */
+void Audio::adaptive_gain(std::vector<float>& signal, float target_rms) {
+    if (signal.empty() || target_rms <= 0.0f) {
+        return;
+    }
+    
+    // Calcular RMS do sinal atual
+    float sum_squares = 0.0f;
+    for (float sample : signal) {
+        sum_squares += sample * sample;
+    }
+    float current_rms = std::sqrt(sum_squares / signal.size());
+    
+    // Evitar divisão por zero
+    if (current_rms < 1e-6f) {
+        return;
+    }
+    
+    // Calcular ganho necessário (com limite máximo para evitar clipping)
+    float gain = target_rms / current_rms;
+    const float MAX_GAIN = 3.0f;  // Limita ganho máximo a 3x para evitar saturação
+    
+    if (gain > MAX_GAIN) {
+        gain = MAX_GAIN;
+    }
+    
+#if LOGS_INFO_AUDIO
+    std::cout << "[INFO] Ganho adaptativo aplicado: current_rms=" << current_rms 
+              << ", target_rms=" << target_rms << ", gain=" << gain << "\n";
+#endif
+    
+    // Aplicar ganho com proteção contra clipping
+    for (float& sample : signal) {
+        sample *= gain;
+        // Limitar a ±1.0 para evitar clipping
+        if (sample > 1.0f) sample = 1.0f;
+        if (sample < -1.0f) sample = -1.0f;
+    }
+}
+
+/**
+ * Versão do filtro passa-alta que retorna uma cópia filtrada do sinal.
+ * Útil quando não se quer modificar o original.
+ * 
+ * @param signal - vetor de amostras float (não modificado)
+ * @param cutoff_freq - frequência de corte em Hz (padrão: 80 Hz)
+ * @param sample_rate - taxa de amostragem em Hz (padrão: 16000 Hz)
+ * @param order - ordem do filtro (1=menos agressivo, 2=mais agressivo)
+ * @return std::vector<float> - cópia do sinal com filtro passa-alta aplicado
+ */
+std::vector<float> Audio::highpass_filter_copy(const std::vector<float>& signal, float cutoff_freq, float sample_rate, int order) {
+    std::vector<float> filtered_signal = signal;
+    highpass_filter(filtered_signal, cutoff_freq, sample_rate, order);
+    return filtered_signal;
 }

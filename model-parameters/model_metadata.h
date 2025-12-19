@@ -85,7 +85,7 @@
 #define EI_CLASSIFIER_PROJECT_ID                 546289
 #define EI_CLASSIFIER_PROJECT_OWNER              "Victor Lompa"
 #define EI_CLASSIFIER_PROJECT_NAME               "MCV25"
-#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     3
+#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     6
 #define EI_CLASSIFIER_NN_INPUT_FRAME_SIZE        650
 #define EI_CLASSIFIER_RAW_SAMPLE_COUNT           16000
 #define EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME      1
@@ -124,13 +124,13 @@
 #define EI_DSP_PARAMS_GENERATED                  1
 
 #define EI_CLASSIFIER_INFERENCING_ENGINE            EI_CLASSIFIER_TFLITE
-#define EI_CLASSIFIER_COMPILED                      1
+#define EI_CLASSIFIER_COMPILED                      0
 #define EI_CLASSIFIER_HAS_TFLITE_OPS_RESOLVER       0
 #define EI_CLASSIFIER_QUANTIZATION_ENABLED          1
 #define EI_CLASSIFIER_HAS_VISUAL_ANOMALY            0
 #define EI_CLASSIFIER_HAS_MODEL_VARIABLES           1
 #define EI_CLASSIFIER_HAS_DATA_NORMALIZATION        0
-#define EI_CLASSIFIER_CALIBRATION_ENABLED           1
+#define EI_CLASSIFIER_CALIBRATION_ENABLED           0
 #define EI_CLASSIFIER_OBJECT_TRACKING_ENABLED       0
 #define EI_CLASSIFIER_TFLITE_LARGEST_ARENA_SIZE     6265
 #define EI_CLASSIFIER_LOAD_IMAGE_SCALING            0
@@ -168,7 +168,7 @@
 
 #define EI_STUDIO_VERSION_MAJOR             1
 #define EI_STUDIO_VERSION_MINOR             81
-#define EI_STUDIO_VERSION_PATCH             2
+#define EI_STUDIO_VERSION_PATCH             4
 
 #if ((EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_TFLITE) ||      (EI_CLASSIFIER_INFERENCING_ENGINE == EI_CLASSIFIER_DRPAI)) &&      EI_CLASSIFIER_USE_FULL_TFLITE == 1
 
@@ -344,11 +344,7 @@ typedef struct {
 } ei_dsp_config_eeg_t;
 
 typedef struct {
-    char* detected_label;
-} ei_perf_cal_output_t;
-
-typedef struct {
-    ei_perf_cal_output_t perf_cal_output;
+    int:0;
 } ei_post_processing_output_t;
 
 #endif // _EI_CLASSIFIER_MODEL_METADATA_H_

@@ -23,7 +23,7 @@ using signal_t = ei::signal_t;
 #define LOGS_ERRO_EI           0                                   // Habilita ou desabilita logs de erro e de aviso
 #define LOGS_INFO_EI           1                                   // Habilita ou desabilita logs informativos
 #define CLASSIFIER_VERBOSE     1
-
+#define EI_THRESHOLD_WAKE_WORD 0.7f                               // Limiar de confiança para detecção da wake-word
 /**
  *  Detecta a palavra-chave "Zenira" no áudio capturado.
  * 

@@ -41,7 +41,7 @@
 
 #include <stdint.h>
 #include "model_metadata.h"
-#include "tflite-model/tflite_learn_546289_5_compiled.h"
+#include "tflite-model/tflite_learn_546289_5.h"
 #include "edge-impulse-sdk/classifier/ei_model_types.h"
 #include "edge-impulse-sdk/classifier/inferencing_engines/engines.h"
 #include "edge-impulse-sdk/classifier/postprocessing/ei_postprocessing_common.h"
@@ -86,13 +86,11 @@ ei_model_dsp_t ei_dsp_blocks_546289_1[ei_dsp_blocks_546289_1_size] = {
         nullptr, // data normalization config
     }
 };
-const ei_config_tflite_eon_graph_t ei_config_graph_546289_5 = {
+const ei_config_tflite_graph_t ei_config_graph_546289_5 = {
     .implementation_version = 1,
-    .model_init = &tflite_learn_546289_5_init,
-    .model_invoke = &tflite_learn_546289_5_invoke,
-    .model_reset = &tflite_learn_546289_5_reset,
-    .model_input = &tflite_learn_546289_5_input,
-    .model_output = &tflite_learn_546289_5_output,
+    .model = tflite_learn_546289_5,
+    .model_size = tflite_learn_546289_5_len,
+    .arena_size = tflite_learn_546289_5_arena_size
 };
 
 const uint8_t ei_output_tensors_indices_546289_5[1] = { 0 };
@@ -103,7 +101,7 @@ ei_learning_block_config_tflite_graph_t ei_learning_block_config_546289_5 = {
     .output_tensors_indices = ei_output_tensors_indices_546289_5,
     .output_tensors_size = ei_output_tensors_size_546289_5,
     .quantized = 1,
-    .compiled = 1,
+    .compiled = 0,
     .graph_config = (void*)&ei_config_graph_546289_5,
     .dequantize_output = 0,
 };
@@ -122,21 +120,12 @@ const ei_learning_block_t ei_learning_blocks_546289_1[ei_learning_blocks_546289_
     },
 };
 
-const ei_performance_calibration_config_t ei_postprocessing_config_6 = {
-    1, /* integer version number */
-    true, /* has configured performance calibration */
-    681, /* average duration window ms */
-    0.44068401763438875, /* detection threshold */
-    1254,  /* suppression ms */
-    0x1, /* suppression flags */
-};
-
 ei_fill_result_classification_i8_config_t ei_fill_result_classification_i8_config_546289_5 = {
     .zero_point = -128,
     .scale = 0.00390625
 };
 
-const size_t ei_postprocessing_blocks_546289_1_size = 2;
+const size_t ei_postprocessing_blocks_546289_1_size = 1;
 const ei_postprocessing_block_t ei_postprocessing_blocks_546289_1[ei_postprocessing_blocks_546289_1_size] = {
     {
         .block_id = 5,
@@ -148,17 +137,6 @@ const ei_postprocessing_block_t ei_postprocessing_blocks_546289_1[ei_postprocess
         .config = (void*)&ei_fill_result_classification_i8_config_546289_5,
         .input_block_id = 5
     },
-    {
-        .block_id = 6,
-        .type = EI_CLASSIFIER_MODE_OTHER,
-        .init_fn = &init_perfcal,
-        .deinit_fn = &deinit_perfcal,
-        .postprocess_fn = &process_perfcal,
-        .display_fn = &display_perfcal,
-        .config = (void*)&ei_postprocessing_config_6,
-        .input_block_id = 5
-    },
-
 };
 
 const uint8_t freeform_outputs_546289_1_size = 0;
@@ -171,7 +149,7 @@ const ei_impulse_t impulse_546289_1 = {
     .project_name = "MCV25",
     .impulse_id = 1,
     .impulse_name = "Impulse #1",
-    .deploy_version = 3,
+    .deploy_version = 6,
 
     .nn_input_frame_size = 650,
     .raw_sample_count = 16000,

@@ -30,7 +30,7 @@ bool wake_word_detected(signal_t* signal) {
 #if CLASSIFIER_VERBOSE
         std::cout << label << ": " << value << std::endl;
 #endif
-        if (label == "Zenira" && value > 0.8f) {
+        if (label == "Zenira" && value > EI_THRESHOLD_WAKE_WORD) {
 #if LOGS_INFO_EI
             std::cout << "[Wake word detectada!]" << std::endl;
 #endif
