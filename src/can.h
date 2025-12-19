@@ -26,7 +26,7 @@
 
 // Debug configs
 #define LOGS_ERROS_CAN 0  // Habilita ou desabilita logs de erro e de aviso
-#define LOGS_INFOS_CAN 1  // Habilita ou desabilita logs informativos
+#define LOGS_INFOS_CAN 0  // Habilita ou desabilita logs informativos
 
 // Estrutura para armazenar ângulo e direção da rabeta
 struct TailCommand {

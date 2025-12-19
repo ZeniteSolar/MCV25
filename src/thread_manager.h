@@ -43,8 +43,8 @@
 struct signal_t;  // Definido em edge_impulse.h
 
 // Debug defines
-#define THREAD_MANAGER_DEBUG    1    // Habilita debug detalhado de threads
-#define THREAD_DEADLOCK_DETECT  1    // Detector de deadlock em modo debug
+#define THREAD_MANAGER_DEBUG    0    // Habilita debug detalhado de threads
+#define THREAD_DEADLOCK_DETECT  0    // Detector de deadlock em modo debug
 #define THREAD_PERF_LOGGING     0    // Log de performance (latência)
 
 /** @struct AudioFrame
