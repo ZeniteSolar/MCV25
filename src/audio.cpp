@@ -260,28 +260,57 @@ void Audio::get_audio_raw(snd_pcm_t* audio, std::vector<int16_t>* out, size_t le
  * utilizando interpolação linear para evitar aliasing caso DOWNSAMPLE_QUALITY
  * esteja definido. Caso contrário, utiliza o método mais simples de nearest neighbor.
  */
-void Audio::downsample(const std::vector<int16_t>& input, std::vector<int16_t>& output) {
+void Audio::downsample(const std::vector<int16_t>& input,
+                       std::vector<int16_t>& output) {
     output.resize(SAMPLE_LENGTH);
     size_t input_size = input.size();
 
-#if DOWNSAMPLE_QUALITY
+#if DOWNSAMPLE_QUALITY == 1
+    // Interpolação linear
     for (size_t i = 0; i < SAMPLE_LENGTH; ++i) {
         double src_index = i * (input_size - 1.0) / (SAMPLE_LENGTH - 1.0);
-        size_t index_floor = static_cast<size_t>(std::floor(src_index));
+        size_t index_floor = static_cast<size_t>(src_index);
         size_t index_ceil  = std::min(index_floor + 1, input_size - 1);
         double frac = src_index - index_floor;
-        
-        double sample = (1.0 - frac) * input[index_floor] + frac * input[index_ceil];
+
+        double sample = (1.0 - frac) * input[index_floor] +
+                        frac * input[index_ceil];
+
         output[i] = static_cast<int16_t>(sample);
     }
-#else    
+
+#elif DOWNSAMPLE_QUALITY == 2
+    // Média por bloco (box averaging)
+    double ratio = static_cast<double>(input_size) / SAMPLE_LENGTH;
+
+    for (size_t i = 0; i < SAMPLE_LENGTH; ++i) {
+        size_t start = static_cast<size_t>(i * ratio);
+        size_t end   = static_cast<size_t>((i + 1) * ratio);
+
+        if (end <= start)
+            end = start + 1;
+
+        end = std::min(end, input_size);
+
+        int64_t acc = 0;
+        size_t count = 0;
+
+        for (size_t j = start; j < end; ++j) {
+            acc += input[j];
+            ++count;
+        }
+
+        output[i] = static_cast<int16_t>(acc / count);
+    }
+
+#else
+    // Nearest neighbor
     for (size_t i = 0; i < SAMPLE_LENGTH; ++i) {
         size_t idx = (i * input_size) / SAMPLE_LENGTH;
         idx = std::min(idx, input_size - 1);
         output[i] = input[idx];
     }
 #endif
-
 }
 
 /** Normaliza os samples de áudio

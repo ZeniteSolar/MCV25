@@ -38,9 +38,10 @@ using signal_t = ei::signal_t;
 #define PCM_OUTPUT_DEVICE   "plughw:2,0"  // Dispositivo de saída (fone/speaker)
 
 // Downsample configs
-// 0 -> nearest neighbor (mais rápido)
-// 1 -> interpolação linear (melhor qualidade)
-#define DOWNSAMPLE_QUALITY  0         // Habilita downsample com melhor qualidade
+// 0 -> nearest neighbor
+// 1 -> interpolação linear 
+// 2 -> Média por bloco (box averaging)
+#define DOWNSAMPLE_QUALITY  2         // Habilita downsample com a qualidade selecionada
 
 // Filter configs
 #define HIGHPASS_FILTER_ENABLE 0       // Habilita filtro passa-alta para redução de ruído
